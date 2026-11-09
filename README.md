@@ -34,10 +34,11 @@ The main screen lists every paired phone with its battery level, whether it is c
 2. "Pixel 7 is fully charged. You can use it now." when it reaches 100%.
 
 <p align="center">
-  <img src="docs/screenshots/alerts.png" width="360" alt="The full-charge alert in the notification shade">
+  <img src="docs/screenshots/charging.png" width="400" alt="While a phone charges: the charging status and the 80% alert">
+  <img src="docs/screenshots/alerts.png" width="400" alt="The fully charged alert">
 </p>
 
-Each alert fires once per charge. A phone that hovers at 99/100% or sits at an 80% charge limit does not spam you.
+The status notification only shows while a phone is charging, and it names that phone. Each alert fires once per charge. A phone that hovers at 99/100% or sits at an 80% charge limit does not spam you.
 
 ## Install
 
