@@ -51,6 +51,11 @@
             android:name=".UpdateReceiver"
             android:exported="false" />
 
+        <!-- The low-power check alarm. -->
+        <receiver
+            android:name=".PollReceiver"
+            android:exported="false" />
+
         <!-- Lets Google Play services fetch the QR scanner module ahead of time. -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"

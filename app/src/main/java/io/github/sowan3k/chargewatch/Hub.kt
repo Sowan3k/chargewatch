@@ -32,6 +32,24 @@ object Hub {
     var updateError: String? = null
         private set
 
+    /** True while the main screen is on screen. The service stays live then. */
+    var uiVisible: Boolean = false
+        private set
+
+    /** What the service exposes to the screen and to the poll alarm while it runs. */
+    interface ServiceHooks {
+        fun reevaluate()
+        fun pollAlarm()
+    }
+
+    var service: ServiceHooks? = null
+
+    fun setUiVisible(visible: Boolean) {
+        if (visible == uiVisible) return
+        uiVisible = visible
+        service?.reevaluate()
+    }
+
     private val listeners = LinkedHashSet<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
     private var posted = false

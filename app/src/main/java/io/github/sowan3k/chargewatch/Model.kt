@@ -16,6 +16,8 @@ data class Device(
     val alertedThreshold: Boolean = false,
     /** Set once the full alert has fired for the current charge. */
     val alertedFull: Boolean = false,
+    /** How often this phone promises a heartbeat, in seconds. Used to tell "quiet" from "gone". */
+    val heartbeat: Int = Tracker.DEFAULT_HEARTBEAT,
 )
 
 enum class Alert { THRESHOLD, FULL }
@@ -28,7 +30,8 @@ data class Update(val changed: Boolean, val alert: Alert? = null)
  * Rules:
  * - Alerts fire only on a transition: the previous level was below the mark and the new
  *   level is at or above it.
- * - Alerts fire only for fresh messages (under [FRESH_SECONDS] old) and never for this phone.
+ * - Alerts fire only for recent messages (under [FRESH_SECONDS] old) and never for this phone.
+ *   The window is wide enough for a low-power check, which can run up to ~15 minutes late.
  * - Each alert fires at most once per charge. It re-arms when the phone is unplugged or the
  *   level drops clearly below the mark. This stops repeat alerts when a phone hovers at
  *   99/100 % or sits at an 80 % charge limit.
@@ -100,8 +103,14 @@ class Tracker(private val selfId: String) {
     }
 
     companion object {
-        const val FRESH_SECONDS = 120L
+        const val FRESH_SECONDS = 20 * 60L
         const val REARM_MARGIN = 5
+        const val DEFAULT_HEARTBEAT = 30 * 60
+
+        /** A phone is "gone" after missing two heartbeats plus a margin. */
+        fun staleAfter(d: Device): Long = 2L * d.heartbeat + 5 * 60
+
+        fun isStale(d: Device, nowSec: Long): Boolean = nowSec - d.time > staleAfter(d)
     }
 }
 

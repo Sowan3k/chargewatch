@@ -67,12 +67,14 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         Hub.addListener(hubListener)
+        Hub.setUiVisible(true) // the service goes live while the screen is open
         main.post(ticker)
         if (System.currentTimeMillis() - prefs.lastUpdateCheck > UPDATE_CHECK_MS) checkForUpdate(manual = false)
     }
 
     override fun onPause() {
         Hub.removeListener(hubListener)
+        Hub.setUiVisible(false)
         main.removeCallbacks(ticker)
         super.onPause()
     }
@@ -382,7 +384,7 @@ class MainActivity : Activity() {
     private fun deviceCard(d: Device, isSelf: Boolean, now: Long): View {
         val card = ui.card()
         val age = (now - d.time).coerceAtLeast(0)
-        val stale = !isSelf && age > WatchService.STALE_SECONDS
+        val stale = !isSelf && Tracker.isStale(d, now)
         val low = !d.charging && d.level <= 15
 
         val top = ui.row()
@@ -788,9 +790,12 @@ class MainActivity : Activity() {
         val sheet = Sheet(this, ui)
             .title("Background and battery")
             .text(
-                "$state\n\nChargeWatch keeps one quiet connection open and sends a tiny update when the battery level changes. " +
-                    "If updates stop arriving, set battery use to Unrestricted. Xiaomi, Oppo, Vivo, OnePlus and Huawei phones " +
-                    "also need Autostart. Samsung phones must keep ChargeWatch out of Sleeping apps."
+                "$state\n\nChargeWatch is built to sip battery. It keeps a live connection only while the app is open, " +
+                    "while this phone is on power, or while another phone in your group is charging. The rest of the time it " +
+                    "is in low-power mode: no connection, a quick check every 15 minutes that Android batches with other apps, " +
+                    "and one when you turn the screen on.\n\nIf updates stop arriving, set battery use to Unrestricted. " +
+                    "Xiaomi, Oppo, Vivo, OnePlus and Huawei phones also need Autostart. Samsung phones must keep ChargeWatch " +
+                    "out of Sleeping apps."
             )
             .action("Battery settings", Ui.Style.PRIMARY) { requestUnrestricted() }
         if (isXiaomi()) sheet.action("Autostart settings") { openAutostart() }

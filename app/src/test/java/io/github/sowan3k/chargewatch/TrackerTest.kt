@@ -57,8 +57,26 @@ class TrackerTest {
     @Test
     fun staleMessagesDoNotAlert() {
         val t = Tracker(self)
-        t.onMessage(msg(79, time = now - 600), now, 80)
-        assertNull(t.onMessage(msg(80, time = now - 500), now, 80).alert)
+        t.onMessage(msg(79, time = now - 3000), now, 80)
+        assertNull(t.onMessage(msg(80, time = now - 2900), now, 80).alert)
+    }
+
+    @Test
+    fun lateButRecentMessagesStillAlert() {
+        // A low-power check can fetch a transition a few minutes after it happened.
+        val t = Tracker(self)
+        t.onMessage(msg(79, time = now - 700), now, 80)
+        assertEquals(Alert.THRESHOLD, t.onMessage(msg(80, time = now - 600), now, 80).alert)
+    }
+
+    @Test
+    fun stalenessFollowsEachPhonesHeartbeat() {
+        val charging = Device("a", "A", 80, true, now - 3600, heartbeat = 1800)
+        val onBattery = Device("b", "B", 50, false, now - 3600, heartbeat = 3600)
+        assertFalse(Tracker.isStale(charging, now - 3600 + 60))
+        assertTrue(Tracker.isStale(charging, now + 600))
+        assertFalse(Tracker.isStale(onBattery, now + 600))
+        assertTrue(Tracker.isStale(onBattery, now + 4200))
     }
 
     @Test

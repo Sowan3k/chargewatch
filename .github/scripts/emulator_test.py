@@ -9,7 +9,8 @@ by talking to ntfy.sh directly:
   3. check that the phone publishes its battery level, and again after plugging in
   4. post fake reports from a second phone and check both alerts appear
   5. restart the app and check that replaying the backlog does not alert again
-  6. leave the group and check the "left" message and that the service stopped
+  6. background the app: it drops to low-power mode, and a screen-on check delivers a missed alert
+  7. leave the group and check the "left" message and that the service stopped
 
 Usage: python3 emulator_test.py ChargeWatch.apk
 """
@@ -241,7 +242,27 @@ def main():
     sh("cmd uimode night no")
     time.sleep(4)
 
-    # 6. Leave the group
+    # 6. Low-power mode: in the background, with nothing charging toward an alert, the app
+    #    closes its connection and only checks now and then (and when the screen turns on).
+    sh("dumpsys battery set ac 0")  # this phone off power; Test Phone is already full
+    sh("input keyevent KEYCODE_HOME")
+    check(wait(lambda: "Low-power mode" in notifications(), 30), "in the background with nothing charging, it drops to low-power mode")
+    for level, plugged in ((50, False), (79, True), (80, True)):
+        ntfy_publish(topic, {**other, "level": level, "charging": plugged})
+        time.sleep(2)
+    time.sleep(5)
+    check("Test Phone is 80% charged" not in notifications(), "low-power mode holds no connection open")
+    sh("input keyevent KEYCODE_SLEEP")
+    time.sleep(3)
+    sh("input keyevent KEYCODE_WAKEUP")
+    time.sleep(1)
+    sh("wm dismiss-keyguard")
+    check(wait(lambda: "Test Phone is 80% charged" in notifications(), 40), "turning the screen on runs a check that delivers the missed alert")
+    check(wait(lambda: "Low-power mode" not in notifications(), 20), "goes live while another phone charges toward an alert")
+    sh(f"am start -W -n {PKG}/.MainActivity")
+    time.sleep(2)
+
+    # 7. Leave the group
     sh("input swipe 500 1800 500 400 300")  # scroll to the buttons on small screens
     time.sleep(1)
     tap("Leave group")

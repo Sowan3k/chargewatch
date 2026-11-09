@@ -93,9 +93,17 @@ class Prefs(context: Context) {
         sp.edit().putString(KEY_DEVICES, arr.toString()).apply()
     }
 
+    /** The last relay message id seen in [group], so checks only fetch what is new. */
+    fun lastMsgId(group: String): String? =
+        if (sp.getString(KEY_LAST_MSG_GROUP, null) == group) sp.getString(KEY_LAST_MSG, null) else null
+
+    fun setLastMsgId(group: String, id: String?) {
+        sp.edit().putString(KEY_LAST_MSG_GROUP, group).putString(KEY_LAST_MSG, id).apply()
+    }
+
     /** Forget the group and everything learned from it. Keeps name, threshold and server. */
     fun leave() {
-        sp.edit().remove(KEY_GROUP).remove(KEY_DEVICES).apply()
+        sp.edit().remove(KEY_GROUP).remove(KEY_DEVICES).remove(KEY_LAST_MSG).remove(KEY_LAST_MSG_GROUP).apply()
     }
 
     /**
@@ -132,6 +140,8 @@ class Prefs(context: Context) {
         private const val KEY_UPDATE_JSON = "update_json"
         private const val KEY_UPDATE_CHECKED = "update_checked"
         private const val KEY_UPDATE_NOTIFIED = "update_notified"
+        private const val KEY_LAST_MSG = "last_msg_id"
+        private const val KEY_LAST_MSG_GROUP = "last_msg_group"
 
     }
 }

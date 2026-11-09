@@ -58,6 +58,16 @@ To unpair, tap **Leave group**. The other phones remove this one from their list
 
 The alert level can be Off, 50, 60, 70, 75, 80, 85, 90 or 95%. Each phone sets its own. You can also rename the phone (the default is the name set in Settings > About phone, or the model) and choose a relay server.
 
+## Battery use
+
+ChargeWatch is designed to cost almost nothing when nothing is charging.
+
+A live connection to the relay is the expensive part: ntfy sends a keepalive about every 45 seconds, and each one wakes the phone and its radio. So the app is only live when that is worth it: while the app is open, while this phone is on power (the charger pays for it), or while another phone in your group is charging toward an alert. That window is usually an hour or two.
+
+The rest of the time it runs in low-power mode. The connection is closed. The app checks for news every 15 minutes (30 in Battery Saver) with an inexact alarm that Android can batch with other apps' wake-ups and that respects Doze, and it checks right away when you turn the screen on. A check that finds a charging phone switches to live mode. Alerts still fire for transitions a check finds up to 20 minutes late, and never twice.
+
+Other details: battery changes are only sent in 1% steps while charging above 50% (5% steps otherwise). Heartbeats go out every 30 minutes on power and every 60 minutes on battery, and each report says which, so other phones know when to call it offline. A heartbeat that is almost due is sent in the same wake-up as a check. All network work runs on one thread under a short wakelock. With no network, the app waits for the connection to come back instead of retrying on a timer. The status notification shows the current mode ("Live" or "Low-power mode") and is only updated when its text changes.
+
 ## Keeping it running in the background
 
 ChargeWatch runs a foreground service with a small notification. It restarts after a reboot and after an app update. Most problems come from aggressive battery savers, so if updates stop arriving check these:
@@ -73,12 +83,12 @@ ChargeWatch runs a foreground service with a small notification. It restarts aft
 A group is 80 random bits. The QR code holds `chargewatch:<group id>` and the ntfy topic is `chargewatch-<group id>`. Each phone has a random device id. When its battery changes it posts a small JSON message to the topic:
 
 ```json
-{"v":1,"id":"5f2c9a1be07d4c13","name":"Pixel 7","level":82,"charging":true}
+{"v":1,"id":"5f2c9a1be07d4c13","name":"Pixel 7","level":82,"charging":true,"hb":1800}
 ```
 
-Every phone also keeps a streaming connection to the same topic (`/json?since=12h` on first connect, so it learns the current state of every phone from ntfy's 12-hour cache). It keeps a map of devices and fires an alert only on a transition (previous level below the mark, new level at or above it), only for messages under 2 minutes old, and never for its own messages. Old and duplicate messages are ignored, so replaying the backlog never repeats an alert.
+Every phone also reads the same topic: a streaming connection in live mode, and one-shot checks (`/json?poll=1&since=<last id>`) in low-power mode (see Battery use). The first read uses `since=12h`, so a phone learns the current state of every other phone from ntfy's 12-hour cache. It keeps a map of devices and fires an alert only on a transition (previous level below the mark, new level at or above it), only for messages under 20 minutes old, and never for its own messages. Old and duplicate messages are ignored, so replaying the backlog never repeats an alert.
 
-To stay well under the public relay's limits, a phone sends every 1% change while charging above 50%, every 5% otherwise, and a heartbeat every 30 minutes when nothing changes. The heartbeat is what lets the list say "Last seen 3 h ago" for a phone that has gone quiet. A normal day is roughly 100 to 120 messages per phone.
+To stay well under the public relay's limits, a phone sends every 1% change while charging above 50%, every 5% otherwise, and a heartbeat when nothing changes (every 30 minutes on power, 60 on battery; `hb` says which). The heartbeat is what lets the list say "Last seen 3 h ago" for a phone that has gone quiet. A normal day is roughly 80 to 110 messages per phone.
 
 ## Privacy
 

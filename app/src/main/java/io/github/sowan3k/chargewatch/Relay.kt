@@ -19,13 +19,14 @@ object Relay {
 
     class HttpError(val code: Int, val retryAfterSec: Long?) : IOException("HTTP $code")
 
-    fun report(id: String, name: String, level: Int, charging: Boolean): String =
+    fun report(id: String, name: String, level: Int, charging: Boolean, heartbeatSec: Int): String =
         JSONObject()
             .put("v", 1)
             .put("id", id)
             .put("name", name)
             .put("level", level)
             .put("charging", charging)
+            .put("hb", heartbeatSec)
             .toString()
 
     fun leaveReport(id: String, name: String): String =
@@ -49,6 +50,24 @@ object Relay {
                 throw HttpError(code, c.getHeaderField("Retry-After")?.trim()?.toLongOrNull())
             }
             c.inputStream.use { it.readBytes() }
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /**
+     * One-shot check for messages since [since] (a message id, or a duration like "12h").
+     * ntfy answers with the cached messages and closes. Blocking.
+     */
+    fun poll(server: String, topic: String, since: String): List<String> {
+        val c = URL("$server/$topic/json?poll=1&since=$since").openConnection() as HttpURLConnection
+        try {
+            c.connectTimeout = 15_000
+            c.readTimeout = 20_000
+            c.setRequestProperty("User-Agent", USER_AGENT)
+            val code = c.responseCode
+            if (code != 200) throw HttpError(code, c.getHeaderField("Retry-After")?.trim()?.toLongOrNull())
+            return c.inputStream.bufferedReader(Charsets.UTF_8).use { r -> r.readLines().filter { it.isNotBlank() } }
         } finally {
             c.disconnect()
         }
@@ -80,7 +99,11 @@ object Relay {
                 if (!left && level !in 0..100) {
                     null
                 } else {
-                    Report(Device(id, name, level.coerceIn(0, 100), o.optBoolean("charging"), time, msgId), left)
+                    val hb = o.optInt("hb", Tracker.DEFAULT_HEARTBEAT).coerceIn(5 * 60, 24 * 60 * 60)
+                    Report(
+                        Device(id, name, level.coerceIn(0, 100), o.optBoolean("charging"), time, msgId, heartbeat = hb),
+                        left,
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -97,19 +120,24 @@ object Relay {
 class Subscriber(
     private val server: String,
     private val topic: String,
-    private val onReport: (Report) -> Unit,
+    /** Where to resume: the last message id seen, or "12h" for the whole cache. */
+    private val since: () -> String,
+    /** False while the phone has no network. The loop then waits for [retryNow] instead of a timer. */
+    private val online: () -> Boolean,
+    /** Every message event: its relay id, and the report if it is a valid one. */
+    private val onMessage: (String, Report?) -> Unit,
     private val onState: (State) -> Unit,
 ) {
     sealed class State {
         object Connecting : State()
         object Connected : State()
+        object Offline : State()
         data class Waiting(val seconds: Long, val reason: String) : State()
     }
 
     @Volatile private var running = false
     @Volatile private var connection: HttpURLConnection? = null
     @Volatile private var wakeUp = false
-    @Volatile private var lastMsgId: String? = null
     private val lock = Object()
     private var thread: Thread? = null
 
@@ -145,6 +173,15 @@ class Subscriber(
     private fun loop() {
         var backoffSec = 2L
         while (running) {
+            if (!online()) {
+                // No network: sleep until the network callback wakes us. The long timeout is only a safety net.
+                onState(State.Offline)
+                synchronized(lock) {
+                    if (!wakeUp) lock.wait(10 * 60_000L)
+                    wakeUp = false
+                }
+                continue
+            }
             var reason = "Connection lost"
             var minWaitSec = 0L
             val startedAt = System.currentTimeMillis()
@@ -152,8 +189,7 @@ class Subscriber(
                 onState(State.Connecting)
                 // First connect: replay the cached backlog (ntfy keeps 12 h) to learn the
                 // current state of every phone. Reconnects only fetch what was missed.
-                val since = lastMsgId ?: "12h"
-                val c = URL("$server/$topic/json?since=$since").openConnection() as HttpURLConnection
+                val c = URL("$server/$topic/json?since=${since()}").openConnection() as HttpURLConnection
                 connection = c
                 c.connectTimeout = 15_000
                 // ntfy sends a keepalive event about every 45 s, so silence means a dead link.
@@ -170,8 +206,7 @@ class Subscriber(
                         val line = r.readLine() ?: break
                         if (line.isBlank()) continue
                         val parsed = Relay.parse(line) ?: continue
-                        if (parsed.first.isNotEmpty()) lastMsgId = parsed.first
-                        parsed.second?.let(onReport)
+                        onMessage(parsed.first, parsed.second)
                     }
                 }
             } catch (e: Relay.HttpError) {
