@@ -254,6 +254,13 @@ def main():
     check(wait(lambda: not service_running(), 20), "service stops after leaving")
     check(wait(lambda: "Pair your phones" in screen_text(), 20), "app returns to the pairing screen")
 
+    # The launcher icon as Android draws it (adaptive icon with gradient strokes)
+    sh("input keyevent KEYCODE_HOME")
+    time.sleep(2)
+    sh("input swipe 540 1900 540 500 300")
+    time.sleep(3)
+    screenshot("7-launcher")
+
 
 if __name__ == "__main__":
     try:
