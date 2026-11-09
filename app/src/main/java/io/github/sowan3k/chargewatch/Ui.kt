@@ -77,6 +77,8 @@ class Ui(val context: Context) {
     val redBg = if (dark) 0x33EF4444 else 0x1A991B1B
     val redText = destructive
     val track = quiet
+    /** The alert mark (tick, "Alert at 80%", settings icon): primary, lighter red (chart-1) in dark for contrast. */
+    val mark = if (dark) 0xFFF87171.toInt() else 0xFF9B2C2C.toInt()
     /** Shadow tint, hsl(0 63% 18%). */
     val shadow = 0xFF4B1111.toInt()
 
@@ -274,7 +276,7 @@ class Ui(val context: Context) {
 
     fun iconButton(icon: Int, description: String, onClick: () -> Unit) = ImageView(context).apply {
         setImageResource(icon)
-        imageTintList = ColorStateList.valueOf(primary)
+        imageTintList = ColorStateList.valueOf(mark)
         contentDescription = description
         scaleType = ImageView.ScaleType.CENTER
         background = ripple(rounded(surface, 99, border), 99)
