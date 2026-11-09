@@ -2,7 +2,7 @@
 
 Your main phone is charging in another room and you are using a second phone. ChargeWatch tells the second phone when the first one hits 80% and when it is full.
 
-It is a tiny Android app (about 1 MB) with no account and no backend. Phones pair by scanning a QR code and talk through the free [ntfy.sh](https://ntfy.sh) push relay.
+It is a tiny Android app (under 300 KB) with no account and no backend. Phones pair by scanning a QR code and talk through the free [ntfy.sh](https://ntfy.sh) push relay.
 
 **[Download ChargeWatch.apk](https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.apk)** (Android 8.0 or newer)
 
@@ -55,11 +55,13 @@ A group is 80 random bits. The QR code holds `chargewatch:<group id>` and the nt
 
 Every phone also keeps a streaming connection to the same topic (`/json?since=12h` on first connect, so it learns the current state of every phone from ntfy's 12-hour cache). It keeps a map of devices and fires an alert only on a transition (previous level below the mark, new level at or above it), only for messages under 2 minutes old, and never for its own messages. Old and duplicate messages are ignored, so replaying the backlog never repeats an alert.
 
-To stay well under the public relay's limits, a phone sends every 1% change while charging above 50%, every 5% otherwise, and a heartbeat every 20 minutes when nothing changes. The heartbeat is what lets the list say "Last seen 3 h ago" for a phone that has gone quiet. A full day is usually around 100 messages per phone.
+To stay well under the public relay's limits, a phone sends every 1% change while charging above 50%, every 5% otherwise, and a heartbeat every 30 minutes when nothing changes. The heartbeat is what lets the list say "Last seen 3 h ago" for a phone that has gone quiet. A normal day is roughly 100 to 120 messages per phone.
 
 ## Privacy
 
 There is no ChargeWatch server and no account. The messages carry only a random id, the phone name, the battery level and the charging state. Anyone who has your group's QR code or code can read them, and so can the relay operator. If that matters to you, run your own relay.
+
+The QR scanner comes from Google Play services through Google's ML Kit library, which may send anonymous usage statistics about the scanner to Google. The app asks for no camera, location or contacts permission.
 
 ## Self-hosted relay
 

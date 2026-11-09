@@ -28,7 +28,7 @@ import kotlin.math.abs
 
 /**
  * Foreground service that does all the work:
- * - publishes this phone's battery level when it changes, plus a heartbeat,
+ * - publishes this phone's battery level when it changes, plus a 30-minute heartbeat,
  * - keeps a streaming subscription to the group topic,
  * - posts alerts when another phone crosses the alert level or reaches 100 %.
  */
@@ -102,7 +102,7 @@ class WatchService : Service() {
             publishNow()
         }
         if (intent?.action == ACTION_FORGET) {
-            intent.getStringExtra(EXTRA_ID)?.let { id ->
+            intent?.getStringExtra(EXTRA_ID)?.let { id ->
                 if (tracker.remove(id) != null) {
                     scheduleSave()
                     pushToHub()
@@ -404,7 +404,7 @@ class WatchService : Service() {
         private const val NOTIF_STATUS = 1
         private const val ALERT_BASE = 1000
 
-        const val HEARTBEAT_MS = 20 * 60 * 1000L
+        const val HEARTBEAT_MS = 30 * 60 * 1000L
         private const val RETRY_MS = 30 * 1000L
         private const val FINE_FROM = 50
         private const val COARSE_STEP = 5

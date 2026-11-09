@@ -352,7 +352,7 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             hint = "xxxx-xxxx-xxxx-xxxx-xxxx"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            isSingleLine = true
+            setSingleLine(true)
         }
         AlertDialog.Builder(this)
             .setTitle("Enter group code")
@@ -479,7 +479,7 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             setText(prefs.name)
             setSelection(text.length)
-            isSingleLine = true
+            setSingleLine(true)
             filters = arrayOf(InputFilter.LengthFilter(Prefs.MAX_NAME))
         }
         AlertDialog.Builder(this)
@@ -507,7 +507,7 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             setText(prefs.server)
             setSelection(text.length)
-            isSingleLine = true
+            setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         AlertDialog.Builder(this)
