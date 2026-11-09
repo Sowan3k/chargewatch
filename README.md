@@ -7,10 +7,14 @@ It is a tiny Android app (under 500 KB) with no account and no backend. Phones p
 **[Download ChargeWatch.apk](https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.apk)** (Android 8.0 or newer)
 
 <p align="center">
-  <img src="docs/screenshots/pairing.png" width="200" alt="Pairing screen">
-  <img src="docs/screenshots/main.png" width="200" alt="Main screen with two phones">
-  <img src="docs/screenshots/qr.png" width="200" alt="QR code sheet">
-  <img src="docs/screenshots/main-dark.png" width="200" alt="Main screen in dark mode">
+  <img src="docs/screenshots/name.png" width="250" alt="Onboarding: name this phone or use the system name">
+  <img src="docs/screenshots/main.png" width="250" alt="Main screen: another phone at 100% and this phone charging">
+  <img src="docs/screenshots/main-dark.png" width="250" alt="Main screen in dark mode">
+</p>
+<p align="center">
+  <img src="docs/screenshots/pairing.png" width="250" alt="Onboarding: pair your phones">
+  <img src="docs/screenshots/qr.png" width="250" alt="Add a phone: QR code and group code">
+  <img src="docs/screenshots/settings.png" width="250" alt="Settings sheet">
 </p>
 
 Screenshots come from the automated test, which installs every build on an Android 14 emulator.
@@ -21,6 +25,10 @@ The main screen lists every paired phone with its battery level, whether it is c
 
 1. "Pixel 7 is 80% charged" when it reaches your alert level (80% by default, you can change it).
 2. "Pixel 7 is fully charged. You can use it now." when it reaches 100%.
+
+<p align="center">
+  <img src="docs/screenshots/alerts.png" width="360" alt="The full-charge alert in the notification shade">
+</p>
 
 Each alert fires once per charge. A phone that hovers at 99/100% or sits at an 80% charge limit does not spam you.
 
