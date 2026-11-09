@@ -6,6 +6,15 @@ It is a tiny Android app (under 500 KB) with no account and no backend. Phones p
 
 **[Download ChargeWatch.apk](https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.apk)** (Android 8.0 or newer)
 
+<p align="center">
+  <img src="docs/screenshots/pairing.png" width="200" alt="Pairing screen">
+  <img src="docs/screenshots/main.png" width="200" alt="Main screen with two phones">
+  <img src="docs/screenshots/qr.png" width="200" alt="QR code sheet">
+  <img src="docs/screenshots/main-dark.png" width="200" alt="Main screen in dark mode">
+</p>
+
+Screenshots come from the automated test, which installs every build on an Android 14 emulator.
+
 ## What it does
 
 The main screen lists every paired phone with its battery level, whether it is charging, and how long ago it last reported. When another phone in your group is charging you get two notifications:
@@ -76,9 +85,9 @@ You need JDK 17 and the Android SDK (platform 34).
 # APK: app/build/outputs/apk/release/app-release.apk
 ```
 
-The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
+The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it ink navy on warm paper (with a dark twin), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), cards, status pills and bottom sheets. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
 
-Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest).
+Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest). A second job installs that APK on an Android 14 emulator and drives it end to end (`.github/scripts/emulator_test.py`): it creates a group, checks that battery changes reach ntfy.sh, plays a second phone to trigger both alerts, restarts the app to make sure alerts do not repeat, and leaves the group.
 
 ## License
 
