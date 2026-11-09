@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Warm stone, light ink, a brighter red primary. -->
     <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
-        <item name="android:colorPrimary">#ECE6D9</item>
-        <item name="android:colorPrimaryDark">#0B121D</item>
-        <item name="android:colorAccent">#3DBE8B</item>
-        <item name="android:windowBackground">#0B121D</item>
-        <item name="android:statusBarColor">#0B121D</item>
+        <item name="android:colorPrimary">#B91C1C</item>
+        <item name="android:colorPrimaryDark">#1C1917</item>
+        <item name="android:colorAccent">#B91C1C</item>
+        <item name="android:windowBackground">#1C1917</item>
+        <item name="android:statusBarColor">#1C1917</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:navigationBarColor">#0B121D</item>
-        <item name="android:textColorHighlight">#333DBE8B</item>
+        <item name="android:navigationBarColor">#1C1917</item>
+        <item name="android:textColorHighlight">#33B91C1C</item>
     </style>
 </resources>

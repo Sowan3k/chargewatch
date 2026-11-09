@@ -413,7 +413,7 @@ class MainActivity : Activity() {
         card.addView(figure, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = ui.dp(6) })
 
         card.addView(
-            BatteryBar(this, ui.track, ui.brass).apply {
+            BatteryBar(this, ui.track, ui.primary).apply {
                 level = d.level
                 fillColor = when {
                     stale -> ui.dotIdle
@@ -434,7 +434,7 @@ class MainActivity : Activity() {
         }
         bottom.addView(ui.caption(left, if (stale) ui.amberText else ui.muted), LinearLayout.LayoutParams(0, WRAP, 1f))
         if (!isSelf && prefs.threshold > 0) {
-            bottom.addView(ui.caption("Alert at ${prefs.threshold}%", ui.brass))
+            bottom.addView(ui.caption("Alert at ${prefs.threshold}%", ui.primary))
         }
         card.addView(bottom, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(8) })
 

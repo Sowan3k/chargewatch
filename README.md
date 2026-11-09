@@ -1,10 +1,17 @@
-# ChargeWatch
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/hero-dark.svg">
+    <img src="docs/hero-light.svg" width="880" alt="ChargeWatch: one phone charges, and the phone in your hand gets a notification at 80% and when it is full">
+  </picture>
+</p>
+
+<p align="center">
+  <b><a href="https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.apk">Download ChargeWatch.apk</a></b> · Android 8.0 or newer · under 500 KB · <a href="https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.zip">zip</a> if your browser blocks APKs
+</p>
 
 Your main phone is charging in another room and you are using a second phone. ChargeWatch tells the second phone when the first one hits 80% and when it is full.
 
-It is a tiny Android app (under 500 KB) with no account and no backend. Phones pair by scanning a QR code and talk through the free [ntfy.sh](https://ntfy.sh) push relay.
-
-**[Download ChargeWatch.apk](https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.apk)** (Android 8.0 or newer)
+It is a tiny Android app with no account and no backend. Phones pair by scanning a QR code and talk through the free [ntfy.sh](https://ntfy.sh) push relay.
 
 <p align="center">
   <img src="docs/screenshots/name.png" width="250" alt="Onboarding: name this phone or use the system name">
@@ -115,7 +122,7 @@ You need JDK 17 and the Android SDK (platform 34).
 # APK: app/build/outputs/apk/release/app-release.apk
 ```
 
-The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it ink navy on warm paper (with a dark twin), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), cards, status pills and bottom sheets. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
+The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a warm claret theme (off-white paper, claret actions, amber for charging, with a warm stone dark mode), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), cards, status pills and bottom sheets. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
 
 Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest). A second job installs that APK on an Android 14 emulator and drives it end to end (`.github/scripts/emulator_test.py`): it creates a group, checks that battery changes reach ntfy.sh, plays a second phone to trigger both alerts, restarts the app to make sure alerts do not repeat, and leaves the group.
 

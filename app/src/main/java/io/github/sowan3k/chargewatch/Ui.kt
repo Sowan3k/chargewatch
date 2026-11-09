@@ -33,37 +33,52 @@ import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * ChargeWatch's design system, adapted from the docintel web app.
+ * ChargeWatch's design system.
  *
- * The palette is the one of financial print: ink navy on warm paper, a ledger green
- * for "charging" and "checked", brass for decoration only, amber for "needs attention"
- * and red only for problems. Titles and figures use Barlow Semi Condensed, text uses
- * IBM Plex Sans and codes use IBM Plex Mono. Fine states are quiet (a neutral pill with
- * a small dot) so the screen does not turn green.
+ * Colours: a warm claret theme. Off-white paper with near-black ink, claret (#9B2C2C) for
+ * the main actions and the alert mark, warm cream for secondary actions, amber for
+ * "charging", golden brown for labels, and a darker red only for problems. The dark theme
+ * is warm stone with a brighter red. Shadows are tinted deep red. The values come from the
+ * project's theme tokens (background, card, primary, secondary, accent, muted, border,
+ * destructive, chart).
+ *
+ * Type: Barlow Semi Condensed for titles and figures, IBM Plex Sans for text, IBM Plex Mono
+ * for codes. Fine states are quiet (a neutral pill with a small dot).
  */
 class Ui(val context: Context) {
     val dark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
         Configuration.UI_MODE_NIGHT_YES
 
-    // ---- Colour tokens ----
-    val bg = if (dark) 0xFF0B121D.toInt() else 0xFFF3EFE6.toInt()
-    val fg = if (dark) 0xFFECE6D9.toInt() else 0xFF0F1B2D.toInt()
-    val muted = if (dark) 0xFF9CA3AE.toInt() else 0xFF5B6271.toInt()
-    val surface = if (dark) 0xBD131C2A.toInt() else 0xD6FFFDF8.toInt()
-    val border = if (dark) 0x14ECE6D9 else 0x170F1B2D
-    val hairline = if (dark) 0x1FECE6D9 else 0x1F0F1B2D
-    val brand = if (dark) 0xFF3DBE8B.toInt() else 0xFF0D7A56.toInt()
-    val brass = if (dark) 0xFFD9A94E.toInt() else 0xFFA97A26.toInt()
-    val sheet = if (dark) 0xFF131C2A.toInt() else 0xFFFBF8F2.toInt()
-    val quiet = if (dark) 0x0FFFFFFF else 0x0A000000
-    val dotOk = 0xFF10B981.toInt()
-    val dotIdle = if (dark) 0x40ECE6D9 else 0x400F1B2D
-    val amberBg = if (dark) 0x6678350F else 0xFFFEF3C7.toInt()
-    val amberBorder = if (dark) 0xFF78350F.toInt() else 0xFFFDE68A.toInt()
-    val amberText = if (dark) 0xFFFCD34D.toInt() else 0xFF92400E.toInt()
-    val redBg = if (dark) 0x667F1D1D else 0xFFFEE2E2.toInt()
-    val redText = if (dark) 0xFFFCA5A5.toInt() else 0xFF991B1B.toInt()
-    val track = if (dark) 0x1AECE6D9 else 0x140F1B2D
+    // ---- Colour tokens (light / dark) ----
+    val bg = if (dark) 0xFF1C1917.toInt() else 0xFFFAF7F5.toInt()            // background
+    val fg = if (dark) 0xFFF5F5F4.toInt() else 0xFF1A1A1A.toInt()            // foreground
+    val muted = if (dark) 0xFFD6D3D1.toInt() else 0xFF57534E.toInt()         // muted-foreground
+    val surface = if (dark) 0xFF292524.toInt() else 0xFFFAF7F5.toInt()       // card
+    val border = if (dark) 0xFF44403C.toInt() else 0xFFF5E8D2.toInt()        // border
+    val hairline = border
+    val primary = if (dark) 0xFFB91C1C.toInt() else 0xFF9B2C2C.toInt()       // primary
+    val onPrimary = if (dark) 0xFFFAF7F5.toInt() else 0xFFFFFFFF.toInt()     // primary-foreground
+    val secondary = if (dark) 0xFF92400E.toInt() else 0xFFFDF2D6.toInt()     // secondary
+    val onSecondary = if (dark) 0xFFFEF3C7.toInt() else 0xFF805500.toInt()   // secondary-foreground
+    val accent = if (dark) 0xFFB45309.toInt() else 0xFFFEF3C7.toInt()        // accent
+    val onAccent = if (dark) 0xFFFEF3C7.toInt() else 0xFF7F1D1D.toInt()      // accent-foreground
+    val destructive = if (dark) 0xFFEF4444.toInt() else 0xFF991B1B.toInt()   // destructive
+    /** "Charging": amber (chart-4). */
+    val brand = if (dark) 0xFFFBBF24.toInt() else 0xFFB45309.toInt()
+    /** Labels and small accents: golden brown in light, amber in dark. */
+    val brass = if (dark) 0xFFF59E0B.toInt() else 0xFF805500.toInt()
+    val sheet = surface                                                     // popover
+    val quiet = if (dark) 0xFF1F1C1A.toInt() else 0xFFF0EBE8.toInt()         // muted
+    val dotOk = brand
+    val dotIdle = if (dark) 0x66F5F5F4 else 0x401A1A1A
+    val amberBg = if (dark) 0x38B45309 else accent
+    val amberBorder = if (dark) 0x80B45309.toInt() else 0xFFF5E1B0.toInt()
+    val amberText = if (dark) 0xFFFEF3C7.toInt() else onAccent
+    val redBg = if (dark) 0x33EF4444 else 0x1A991B1B
+    val redText = destructive
+    val track = quiet
+    /** Shadow tint, hsl(0 63% 18%). */
+    val shadow = 0xFF4B1111.toInt()
 
     // ---- Type ----
     val display: Typeface = Fonts.get(context, Fonts.DISPLAY)
@@ -139,10 +154,15 @@ class Ui(val context: Context) {
         if (strokeColor != 0) setStroke(dp(strokeDp), strokeColor)
     }
 
-    /** The standard card: a translucent surface with a hairline border, 16 dp corners. */
+    /** The standard card: the card colour, a border, 16 dp corners and a soft red-tinted shadow. */
     fun card() = column().apply {
         setPadding(dp(16), dp(16), dp(16), dp(16))
         background = rounded(surface, 16, border)
+        elevation = dpf(if (dark) 1f else 3f)
+        if (Build.VERSION.SDK_INT >= 28) {
+            outlineSpotShadowColor = shadow
+            outlineAmbientShadowColor = shadow
+        }
     }
 
     /** Empty states: a dashed outline. */
@@ -151,7 +171,7 @@ class Ui(val context: Context) {
         gravity = Gravity.CENTER_HORIZONTAL
         background = GradientDrawable().apply {
             cornerRadius = dpf(16f)
-            setStroke(dp(1), if (dark) 0x26FFFFFF else 0x26000000, dpf(6f), dpf(5f))
+            setStroke(dp(1), if (dark) 0x40F5F5F4 else 0x4D805500, dpf(6f), dpf(5f))
         }
     }
 
@@ -160,14 +180,15 @@ class Ui(val context: Context) {
         setPadding(dp(16), dp(14), dp(16), dp(14))
         background = rounded(amberBg, 16, amberBorder)
         addView(text(title, 15f, amberText, sansSemi))
-        addView(text(message, 14f, if (dark) 0xFFE7D9B0.toInt() else 0xFF78350F.toInt(), sans).apply {
+        addView(text(message, 14f, if (dark) 0xFFF5F5F4.toInt() else 0xFF1A1A1A.toInt(), sans).apply {
             setLineSpacing(0f, 1.3f)
             setPadding(0, dp(4), 0, dp(10))
         })
         addView(
             text(action, 14f, amberText, sansSemi).apply {
                 setPadding(dp(14), dp(8), dp(14), dp(8))
-                background = ripple(rounded((amberText and 0x00FFFFFF) or 0x24000000, 10), 10)
+                setTextColor(onPrimary)
+                background = ripple(rounded(primary, 10), 10)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { onClick() }
@@ -191,14 +212,14 @@ class Ui(val context: Context) {
 
     private fun ripple(content: Drawable?, radiusDp: Int): RippleDrawable {
         val mask = rounded(Color.WHITE, radiusDp)
-        val color = if (dark) 0x33FFFFFF else 0x220F1B2D
+        val color = if (dark) 0x33FFFFFF else 0x229B2C2C
         return RippleDrawable(ColorStateList.valueOf(color), content, mask)
     }
 
     /**
      * Buttons are plain TextViews with a shape and a ripple, so no platform button
-     * style (caps, insets, elevation) gets in the way. The main action is ink on paper,
-     * cream on ink in dark mode.
+     * style (caps, insets, elevation) gets in the way. The main action is claret (primary),
+     * secondary actions are warm cream (secondary).
      */
     fun button(label: String, style: Style = Style.SECONDARY, onClick: () -> Unit) = text(label, 15f, fg, sansMedium).apply {
         gravity = Gravity.CENTER
@@ -208,10 +229,13 @@ class Ui(val context: Context) {
         isFocusable = true
         when (style) {
             Style.PRIMARY -> {
-                setTextColor(bg)
-                background = ripple(rounded(fg, 12), 12)
+                setTextColor(onPrimary)
+                background = ripple(rounded(primary, 12), 12)
             }
-            Style.SECONDARY -> background = ripple(rounded(surface, 12, if (dark) 0x26ECE6D9 else 0x260F1B2D), 12)
+            Style.SECONDARY -> {
+                setTextColor(onSecondary)
+                background = ripple(rounded(secondary, 12, if (dark) 0 else 0xFFF5E1B0.toInt()), 12)
+            }
             Style.GHOST -> {
                 setTextColor(muted)
                 background = ripple(null, 12)
@@ -250,7 +274,7 @@ class Ui(val context: Context) {
 
     fun iconButton(icon: Int, description: String, onClick: () -> Unit) = ImageView(context).apply {
         setImageResource(icon)
-        imageTintList = ColorStateList.valueOf(fg)
+        imageTintList = ColorStateList.valueOf(primary)
         contentDescription = description
         scaleType = ImageView.ScaleType.CENTER
         background = ripple(rounded(surface, 99, border), 99)
@@ -268,19 +292,19 @@ class Ui(val context: Context) {
         textSize = 16f
         typeface = if (monoFace) mono else sans
         setTextColor(fg)
-        setHintTextColor(if (dark) 0x66ECE6D9 else 0x660F1B2D)
+        setHintTextColor(if (dark) 0x80D6D3D1.toInt() else 0x8057534E.toInt())
         minHeight = dp(48)
         setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = rounded(if (dark) 0x0DFFFFFF else 0xB3FFFFFF.toInt(), 12, if (dark) 0x1FFFFFFF else 0x1A000000)
+        background = rounded(if (dark) 0xFF1C1917.toInt() else 0xFFFFFFFF.toInt(), 12, border, 1)
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
     }
 
     /** Soft light behind the app, like docintel's ambient background. Static, so it costs no battery. */
     fun ambient(): Drawable = Ambient(
         bg,
-        if (dark) 0x1A1D8C64 else 0x140D7A56,
-        if (dark) 0x29BE8C32 else 0x42C4963E,
-        if (dark) 0x2E46648C else 0x1A0F1B2D,
+        if (dark) 0x26B91C1C else 0x109B2C2C,          // primary, top left
+        if (dark) 0x1FB45309 else 0xB3FEF3C7.toInt(),  // accent, right
+        if (dark) 0x14DC2626 else 0x14B45309,          // chart, bottom
     )
 
     companion object {
