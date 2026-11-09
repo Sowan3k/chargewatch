@@ -3,16 +3,10 @@ package io.github.sowan3k.chargewatch
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
-import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -23,33 +17,26 @@ import android.provider.Settings
 import android.text.InputFilter
 import android.text.InputType
 import android.text.TextUtils
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import io.github.sowan3k.chargewatch.Ui.Companion.MATCH
+import io.github.sowan3k.chargewatch.Ui.Companion.WRAP
 
-/** The only screen. The UI is built in code to keep the APK small (no AndroidX, no XML layouts). */
+/** The only screen. Built in code with the small design system in Ui.kt (no AndroidX, no XML layouts). */
 class MainActivity : Activity() {
 
-    private class Palette(
-        val bg: Int, val card: Int, val text: Int, val sub: Int,
-        val accent: Int, val onAccent: Int, val warn: Int, val track: Int, val low: Int, val bar: Int,
-    )
-
     private lateinit var prefs: Prefs
+    private lateinit var ui: Ui
     private lateinit var content: LinearLayout
-    private lateinit var c: Palette
     private val main = Handler(Looper.getMainLooper())
     private val hubListener: () -> Unit = { render() }
     private val ticker = object : Runnable {
@@ -62,29 +49,10 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
-        val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
-        c = if (dark) {
-            Palette(
-                bg = 0xFF0F1316.toInt(), card = 0xFF1B2126.toInt(), text = 0xFFE8EAED.toInt(),
-                sub = 0xFF9AA4AE.toInt(), accent = 0xFF66BB6A.toInt(), onAccent = 0xFF0B1A0C.toInt(),
-                warn = 0xFFFFB74D.toInt(), track = 0xFF2C343B.toInt(), low = 0xFFEF5350.toInt(),
-                bar = 0xFF90A4AE.toInt(),
-            )
-        } else {
-            Palette(
-                bg = 0xFFF3F5F7.toInt(), card = Color.WHITE, text = 0xFF1B1F23.toInt(),
-                sub = 0xFF5F6B76.toInt(), accent = 0xFF2E7D32.toInt(), onAccent = Color.WHITE,
-                warn = 0xFFB45309.toInt(), track = 0xFFE3E7EB.toInt(), low = 0xFFD32F2F.toInt(),
-                bar = 0xFF607D8B.toInt(),
-            )
-        }
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(20), dp(16), dp(32))
-        }
+        ui = Ui(this)
+        content = ui.column().apply { setPadding(ui.dp(20), ui.dp(18), ui.dp(20), ui.dp(32)) }
         setContentView(ScrollView(this).apply {
-            setBackgroundColor(c.bg)
+            background = ui.ambient()
             isFillViewport = true
             addView(content)
         })
@@ -115,155 +83,219 @@ class MainActivity : Activity() {
 
     private fun render() {
         content.removeAllViews()
-        content.addView(text("ChargeWatch", 26f, c.text, bold = true))
         val group = prefs.group
-        val status = when {
-            group == null -> "Not paired yet"
-            Hub.status.isEmpty() -> "Starting…"
-            else -> Hub.status
-        }
-        content.addView(
-            text(status, 14f, if (group == null || Hub.connected) c.sub else c.warn).apply {
-                setPadding(0, dp(2), 0, dp(14))
-            }
-        )
-        if (group == null) {
-            renderUnpaired()
-        } else {
-            renderWarnings()
-            renderPaired(group)
-        }
+        if (group == null) renderWelcome() else renderGroup(group)
     }
 
-    private fun renderUnpaired() {
-        val card = card()
-        card.addView(text("Pair your phones", 20f, c.text, bold = true))
-        card.addView(
-            text(
-                "1. On one phone, tap Create group. It shows a QR code.\n" +
-                    "2. On the other phone, tap Scan QR code.\n" +
-                    "3. Done. Each phone now sees the other's battery and alerts you when it is charged.",
-                15f, c.sub,
+    private fun add(view: View, topDp: Int = 12) {
+        val lp = (view.layoutParams as? LinearLayout.LayoutParams) ?: LinearLayout.LayoutParams(MATCH, WRAP)
+        lp.topMargin = ui.dp(topDp)
+        content.addView(view, lp)
+    }
+
+    private fun header(group: String?): View {
+        val row = ui.row().apply { gravity = Gravity.TOP }
+        val left = ui.column()
+        left.addView(ui.pageTitle("ChargeWatch"))
+        if (group != null) {
+            val status = Hub.status
+            val tone = when {
+                Hub.connected -> Ui.Tone.OK
+                status.isEmpty() || status.startsWith("Connecting") -> Ui.Tone.IDLE
+                else -> Ui.Tone.AMBER
+            }
+            val pill = ui.pill(status.ifEmpty { "Starting…" }, tone)
+            (pill.layoutParams as LinearLayout.LayoutParams).topMargin = ui.dp(10)
+            left.addView(pill)
+        }
+        row.addView(left, LinearLayout.LayoutParams(0, WRAP, 1f))
+        row.addView(ui.iconButton(R.drawable.ic_settings, "Settings") { settings() })
+        return row
+    }
+
+    private fun renderWelcome() {
+        add(header(null), 0)
+        add(ui.eyebrow("Battery alerts between your phones", ui.brass), 36)
+        add(ui.headline("Know when your other phone is charged."), 10)
+        add(
+            ui.body(
+                "Pair your phones with a QR code. While one charges, the other tells you when it " +
+                    "reaches ${thresholdLabel()} and when it is full.",
+                sp = 16f,
+            ),
+            14,
+        )
+
+        val steps = ui.card()
+        steps.addView(ui.cardTitle("Pair your phones"))
+        listOf(
+            "On one phone, tap Create group. It shows a QR code.",
+            "On the other phone, tap Scan QR code.",
+            "Done. Each phone sees the other's battery and alerts you when it is charged.",
+        ).forEachIndexed { i, step ->
+            val row = ui.row().apply { gravity = Gravity.TOP }
+            row.addView(
+                ui.code("${i + 1}", 12f).apply {
+                    gravity = Gravity.CENTER
+                    background = ui.rounded(ui.quiet, 99, ui.border)
+                },
+                LinearLayout.LayoutParams(ui.dp(24), ui.dp(24)).apply { marginEnd = ui.dp(12) },
+            )
+            row.addView(ui.body(step, ui.fg), LinearLayout.LayoutParams(0, WRAP, 1f))
+            steps.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(14) })
+        }
+        add(steps, 24)
+
+        add(ui.button("Create group", Ui.Style.PRIMARY) { createGroup() }, 20)
+        add(ui.button("Scan QR code") { scan() }, 10)
+        add(ui.button("Enter code", Ui.Style.GHOST) { enterCode() }, 4)
+        add(
+            ui.caption(
+                "No account and no server. Phones talk through the free ntfy.sh relay. " +
+                    "Anyone with a group's code can see the battery levels in it."
             ).apply {
-                setPadding(0, dp(8), 0, dp(8))
+                gravity = Gravity.CENTER
                 setLineSpacing(0f, 1.25f)
-            }
-        )
-        card.addView(button("Create group", primary = true) { createGroup() })
-        card.addView(button("Scan QR code") { scan() })
-        card.addView(button("Enter code") { enterCode() })
-        content.addView(card)
-        content.addView(button("Settings") { settings() })
-        content.addView(
-            text(
-                "No account needed. Phones talk through the free ntfy.sh relay. " +
-                    "Anyone with a group's QR code can see the battery levels of the phones in it.",
-                13f, c.sub,
-            ).apply { setPadding(dp(4), dp(14), dp(4), 0) }
+            },
+            16,
         )
     }
 
-    private fun renderWarnings() {
+    private fun renderGroup(group: String) {
+        add(header(group), 0)
+        renderNotices()
+
+        val now = System.currentTimeMillis() / 1000
+        val others = Hub.others
+        add(ui.eyebrow(if (others.size > 1) "Watching ${others.size} phones" else "Watching"), 28)
+        if (others.isEmpty()) {
+            val empty = ui.dashedCard()
+            empty.addView(ui.cardTitle("No other phones yet").apply { gravity = Gravity.CENTER })
+            empty.addView(
+                ui.body("Tap Add a phone, then scan the code with ChargeWatch on your other phone.").apply {
+                    gravity = Gravity.CENTER
+                    setPadding(0, ui.dp(6), 0, 0)
+                }
+            )
+            add(empty, 10)
+        } else {
+            others.forEachIndexed { i, d -> add(deviceCard(d, isSelf = false, now = now), if (i == 0) 10 else 12) }
+        }
+
+        Hub.self?.let {
+            add(ui.eyebrow("This phone"), 24)
+            add(deviceCard(it, isSelf = true, now = now), 10)
+        }
+
+        val actions = ui.row()
+        actions.addView(
+            ui.button("Add a phone", Ui.Style.PRIMARY) { showQr() },
+            LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginEnd = ui.dp(6) },
+        )
+        actions.addView(
+            ui.button("Scan QR code") { scan() },
+            LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginStart = ui.dp(6) },
+        )
+        add(actions, 24)
+
+        val footer = ui.column()
+        footer.addView(ui.eyebrow("Group"))
+        footer.addView(ui.code(Pairing.pretty(group), 15f).apply {
+            setTextIsSelectable(true)
+            setPadding(0, ui.dp(4), 0, 0)
+        })
+        footer.addView(ui.caption("Alert at ${thresholdLabel()} · relay ${host(prefs.server)}").apply {
+            setPadding(0, ui.dp(4), 0, 0)
+        })
+        add(footer, 28)
+        add(ui.button("Leave group", Ui.Style.GHOST) { confirmLeave() }, 12)
+    }
+
+    private fun renderNotices() {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm != null && !nm.areNotificationsEnabled()) {
-            content.addView(
-                banner(
+            add(
+                ui.notice(
                     "Notifications are off",
                     "Turn them on so this phone can tell you when another phone is charged.",
                     "Turn on",
-                ) { openNotificationSettings() }
+                ) { openNotificationSettings() },
+                18,
             )
         }
         if (!isUnrestricted()) {
-            content.addView(
-                banner(
+            val extra = if (isXiaomi()) " On Xiaomi phones, also turn on Autostart in Settings > Background and battery." else ""
+            add(
+                ui.notice(
                     "Battery optimization is on",
-                    "Android may pause ChargeWatch in the background. Set battery usage to Unrestricted so updates and alerts arrive on time.",
+                    "Android may pause ChargeWatch in the background. Set battery use to Unrestricted so updates arrive on time.$extra",
                     "Allow",
-                ) { requestUnrestricted() }
+                ) { requestUnrestricted() },
+                18,
             )
         }
-    }
-
-    private fun renderPaired(group: String) {
-        val now = System.currentTimeMillis() / 1000
-        val others = Hub.others
-        if (others.isEmpty()) {
-            content.addView(card().apply {
-                addView(text("No other phones yet", 17f, c.text, bold = true))
-                addView(
-                    text(
-                        "Tap Show QR code, then scan it with ChargeWatch on your other phone.",
-                        15f, c.sub,
-                    ).apply { setPadding(0, dp(6), 0, 0) }
-                )
-            })
-        } else {
-            others.forEach { content.addView(deviceCard(it, isSelf = false, now = now)) }
-        }
-        Hub.self?.let { content.addView(deviceCard(it, isSelf = true, now = now)) }
-
-        content.addView(row().apply {
-            addView(button("Show QR code", primary = true) { showQr() }, half(end = true))
-            addView(button("Scan QR code") { scan() }, half(end = false))
-        })
-        content.addView(row().apply {
-            addView(button("Settings") { settings() }, half(end = true))
-            addView(button("Leave group") { confirmLeave() }, half(end = false))
-        })
-        content.addView(
-            text(
-                "Group ${Pairing.pretty(group)} · alert at ${thresholdLabel()} · relay ${host(prefs.server)}",
-                12f, c.sub,
-            ).apply { setPadding(dp(4), dp(14), dp(4), 0) }
-        )
     }
 
     private fun deviceCard(d: Device, isSelf: Boolean, now: Long): View {
-        val card = card()
-        card.addView(row().apply {
-            addView(
-                text(d.name, 18f, c.text, bold = true).apply {
-                    maxLines = 1
-                    ellipsize = TextUtils.TruncateAt.END
-                },
-                LinearLayout.LayoutParams(0, WRAP, 1f),
-            )
-            if (isSelf) addView(text("This phone", 13f, c.sub))
-        })
-        card.addView(row().apply {
-            gravity = Gravity.BOTTOM
-            addView(text("${d.level}%", 34f, c.text, bold = true))
-            val state = when {
-                d.charging && d.level >= 100 -> "Full, on charger"
-                d.charging -> "Charging"
-                else -> "On battery"
-            }
-            addView(
-                text(state, 15f, if (d.charging) c.accent else c.sub).apply {
-                    setPadding(dp(10), 0, 0, dp(7))
-                }
-            )
-        })
-        card.addView(
-            ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-                max = 100
-                progress = d.level
-                val color = when {
-                    d.charging -> c.accent
-                    d.level <= 15 -> c.low
-                    else -> c.bar
-                }
-                progressTintList = ColorStateList.valueOf(color)
-                progressBackgroundTintList = ColorStateList.valueOf(c.track)
+        val card = ui.card()
+        val age = (now - d.time).coerceAtLeast(0)
+        val stale = !isSelf && age > WatchService.STALE_SECONDS
+        val low = !d.charging && d.level <= 15
+
+        val top = ui.row()
+        top.addView(
+            ui.cardTitle(d.name).apply {
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
             },
-            LinearLayout.LayoutParams(MATCH, dp(8)).apply { topMargin = dp(4) },
+            LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginEnd = ui.dp(8) },
         )
-        if (!isSelf) {
-            val age = (now - d.time).coerceAtLeast(0)
-            val stale = age > WatchService.STALE_SECONDS
-            val label = if (stale) "Last seen ${ago(age)}. It may be off or offline." else "Updated ${ago(age)}"
-            card.addView(text(label, 13f, if (stale) c.warn else c.sub).apply { setPadding(0, dp(6), 0, 0) })
+        top.addView(
+            when {
+                stale -> ui.pill("Offline", Ui.Tone.AMBER)
+                d.charging && d.level >= 100 -> ui.pill("Full", Ui.Tone.OK)
+                d.charging -> ui.pill("Charging", Ui.Tone.OK)
+                low -> ui.pill("Low", Ui.Tone.RED)
+                else -> ui.pill("On battery", Ui.Tone.IDLE)
+            }
+        )
+        card.addView(top)
+
+        val figure = ui.row(baseline = true)
+        figure.addView(ui.figure("${d.level}", 56f, if (stale) ui.muted else ui.fg))
+        figure.addView(ui.figure("%", 26f, ui.muted).apply { setPadding(ui.dp(2), 0, 0, 0) })
+        card.addView(figure, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = ui.dp(6) })
+
+        card.addView(
+            BatteryBar(this, ui.track, ui.brass).apply {
+                level = d.level
+                fillColor = when {
+                    stale -> ui.dotIdle
+                    d.charging -> ui.brand
+                    low -> ui.redText
+                    else -> (ui.fg and 0x00FFFFFF) or 0x8C000000.toInt()
+                }
+                mark = if (isSelf) 0 else prefs.threshold
+            },
+            LinearLayout.LayoutParams(MATCH, ui.dp(14)).apply { topMargin = ui.dp(10) },
+        )
+
+        val bottom = ui.row()
+        val left = when {
+            isSelf -> "Tap to rename"
+            stale -> "Last seen ${ago(age)}. It may be off or offline."
+            else -> "Updated ${ago(age)}"
+        }
+        bottom.addView(ui.caption(left, if (stale) ui.amberText else ui.muted), LinearLayout.LayoutParams(0, WRAP, 1f))
+        if (!isSelf && prefs.threshold > 0) {
+            bottom.addView(ui.caption("Alert at ${prefs.threshold}%", ui.brass))
+        }
+        card.addView(bottom, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(8) })
+
+        if (isSelf) {
+            card.isClickable = true
+            card.setOnClickListener { editName() }
+        } else {
             card.setOnLongClickListener {
                 confirmForget(d)
                 true
@@ -291,40 +323,29 @@ class MainActivity : Activity() {
     private fun showQr() {
         val group = prefs.group ?: return
         val payload = Pairing.encode(group, prefs.server)
-        val size = minOf((resources.displayMetrics.widthPixels * 0.7).toInt(), dp(300))
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(24), dp(12), dp(24), 0)
+        val size = minOf((resources.displayMetrics.widthPixels * 0.6).toInt(), ui.dp(260))
+        val qr = FrameLayout(this).apply {
+            setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
+            background = ui.rounded(Color.WHITE, 20, if (ui.dark) 0 else ui.border)
+            addView(ImageView(this@MainActivity).apply { setImageBitmap(Qr.bitmap(payload, size)) }, FrameLayout.LayoutParams(size, size))
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { gravity = Gravity.CENTER_HORIZONTAL }
         }
-        layout.addView(
-            ImageView(this).apply { setImageBitmap(Qr.bitmap(payload, size)) },
-            LinearLayout.LayoutParams(size, size),
-        )
-        layout.addView(
-            TextView(this).apply {
-                text = Pairing.pretty(group)
-                textSize = 18f
-                typeface = Typeface.MONOSPACE
+        val relay = if (prefs.server != Pairing.DEFAULT_SERVER) " This group uses the relay ${host(prefs.server)}." else ""
+        Sheet(this, ui)
+            .title("Add a phone")
+            .text("Open ChargeWatch on your other phone, tap Scan QR code and point it here.")
+            .add(qr, 20)
+            .add(ui.code(Pairing.pretty(group), 20f).apply {
                 gravity = Gravity.CENTER
+                letterSpacing = 0.03f
                 setTextIsSelectable(true)
-                setPadding(0, dp(12), 0, dp(4))
-            }
-        )
-        val relayNote = if (prefs.server != Pairing.DEFAULT_SERVER) "\nRelay: ${host(prefs.server)}" else ""
-        layout.addView(
-            TextView(this).apply {
-                text = "Scan this with ChargeWatch on your other phone, or type the code there. " +
-                    "Anyone with this code can see this group's battery levels.$relayNote"
-                textSize = 14f
+            })
+            .add(ui.caption("Or type this code there. Anyone with it can see this group's battery levels.$relay").apply {
                 gravity = Gravity.CENTER
-            }
-        )
-        AlertDialog.Builder(this)
-            .setTitle("Pair another phone")
-            .setView(layout)
-            .setPositiveButton("Done", null)
-            .setNeutralButton("Share code") { _, _ ->
+                setLineSpacing(0f, 1.25f)
+            }, 8)
+            .action("Done", Ui.Style.PRIMARY)
+            .action("Share code") {
                 val send = Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
                     .putExtra(Intent.EXTRA_SUBJECT, "ChargeWatch group code")
@@ -349,18 +370,16 @@ class MainActivity : Activity() {
     }
 
     private fun enterCode() {
-        val input = EditText(this).apply {
-            hint = "xxxx-xxxx-xxxx-xxxx-xxxx"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            setSingleLine(true)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Enter group code")
-            .setMessage("Type the code shown under the QR code on the other phone.")
-            .setView(padded(input))
-            .setPositiveButton("Join") { _, _ -> onInvite(input.text.toString()) }
-            .setNegativeButton("Cancel", null)
+        val input = ui.input("", "xxxx-xxxx-xxxx-xxxx-xxxx", monoFace = true)
+        Sheet(this, ui)
+            .title("Enter group code")
+            .text("Type the code shown under the QR code on the other phone.")
+            .add(input)
+            .action("Join", Ui.Style.PRIMARY) { onInvite(input.text.toString()) }
+            .action("Cancel", Ui.Style.GHOST)
+            .showKeyboard()
             .show()
+        input.requestFocus()
     }
 
     private fun onInvite(raw: String?) {
@@ -380,11 +399,11 @@ class MainActivity : Activity() {
         if (notes.isEmpty()) {
             join(invite)
         } else {
-            AlertDialog.Builder(this)
-                .setTitle("Join this group?")
-                .setMessage(notes.joinToString("\n\n"))
-                .setPositiveButton("Join") { _, _ -> join(invite) }
-                .setNegativeButton("Cancel", null)
+            Sheet(this, ui)
+                .title("Join this group?")
+                .text(notes.joinToString("\n\n"))
+                .action("Join", Ui.Style.PRIMARY) { join(invite) }
+                .action("Cancel", Ui.Style.GHOST)
                 .show()
         }
     }
@@ -399,14 +418,11 @@ class MainActivity : Activity() {
     }
 
     private fun confirmLeave() {
-        AlertDialog.Builder(this)
-            .setTitle("Leave this group?")
-            .setMessage(
-                "This phone stops sharing its battery and stops getting alerts. " +
-                    "The other phones remove it from their list. You can pair again any time."
-            )
-            .setPositiveButton("Leave") { _, _ -> leave() }
-            .setNegativeButton("Cancel", null)
+        Sheet(this, ui)
+            .title("Leave this group?")
+            .text("This phone stops sharing its battery and stops getting alerts. The other phones remove it from their list. You can pair again any time.")
+            .action("Leave", Ui.Style.DANGER) { leave() }
+            .action("Cancel", Ui.Style.GHOST)
             .show()
     }
 
@@ -428,73 +444,94 @@ class MainActivity : Activity() {
     }
 
     private fun confirmForget(d: Device) {
-        AlertDialog.Builder(this)
-            .setTitle("Remove ${d.name}?")
-            .setMessage("It disappears from this list. It comes back if it sends another update.")
-            .setPositiveButton("Remove") { _, _ -> WatchService.forget(this, d.id) }
-            .setNegativeButton("Cancel", null)
+        Sheet(this, ui)
+            .title("Remove ${d.name}?")
+            .text("It disappears from this list. It comes back if it sends another update.")
+            .action("Remove", Ui.Style.DANGER) { WatchService.forget(this, d.id) }
+            .action("Cancel", Ui.Style.GHOST)
             .show()
     }
 
     // ---- Settings ----
 
     private fun settings() {
-        val items = arrayOf(
-            "Alert level: ${thresholdLabel()}",
-            "This phone's name: ${prefs.name}",
-            "Relay server: ${host(prefs.server)}",
-            "Background and battery help",
-            "About ChargeWatch",
+        val sheet = Sheet(this, ui).title("Settings")
+        val list = ui.column()
+        val rows = listOf(
+            Triple("Alert level", thresholdLabel(), ::pickThreshold),
+            Triple("This phone's name", prefs.name, ::editName),
+            Triple("Relay server", host(prefs.server), ::editServer),
+            Triple("Background and battery", if (isUnrestricted()) "Unrestricted" else "Battery optimization is on", ::batteryHelp),
+            Triple("About", "Version ${BuildConfig.VERSION_NAME}", ::about),
         )
-        AlertDialog.Builder(this)
-            .setTitle("Settings")
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> pickThreshold()
-                    1 -> editName()
-                    2 -> editServer()
-                    3 -> batteryHelp()
-                    4 -> about()
-                }
-            }
-            .setNegativeButton("Close", null)
-            .show()
+        rows.forEachIndexed { i, (label, value, open) ->
+            if (i > 0) list.addView(ui.divider())
+            list.addView(settingsRow(label, value) {
+                sheet.dismiss()
+                open()
+            })
+        }
+        sheet.add(list, 12).action("Close", Ui.Style.GHOST).show()
+    }
+
+    private fun settingsRow(label: String, value: String, onClick: () -> Unit): View {
+        val row = ui.row().apply {
+            setPadding(0, ui.dp(14), 0, ui.dp(14))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+        }
+        val texts = ui.column()
+        texts.addView(ui.body(label, ui.fg, 16f))
+        texts.addView(ui.caption(value).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        })
+        row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
+        row.addView(ui.body("›", ui.muted, 24f))
+        return row
     }
 
     private fun pickThreshold() {
-        val labels = THRESHOLDS.map { if (it == 0) "Off (only alert when full)" else "$it%" }.toTypedArray()
-        val selected = THRESHOLDS.indexOf(prefs.threshold).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("Alert me when another phone reaches")
-            .setSingleChoiceItems(labels, selected) { dialog, which ->
-                prefs.threshold = THRESHOLDS[which]
-                dialog.dismiss()
-                render()
+        val sheet = Sheet(this, ui)
+            .title("Alert level")
+            .text("Get a notification when another phone reaches this level while charging. You always get one at 100%.")
+        val grid = ui.column()
+        THRESHOLDS.toList().chunked(3).forEachIndexed { r, chunk ->
+            val row = ui.row()
+            chunk.forEachIndexed { c, value ->
+                val selected = value == prefs.threshold
+                val chip = ui.button(if (value == 0) "Off" else "$value%", if (selected) Ui.Style.PRIMARY else Ui.Style.SECONDARY) {
+                    prefs.threshold = value
+                    sheet.dismiss()
+                    render()
+                }
+                row.addView(chip, LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    if (c > 0) marginStart = ui.dp(8)
+                })
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            grid.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { if (r > 0) topMargin = ui.dp(8) })
+        }
+        sheet.add(grid, 18).show()
     }
 
     private fun editName() {
-        val input = EditText(this).apply {
-            setText(prefs.name)
-            setSelection(text.length)
-            setSingleLine(true)
+        val input = ui.input(prefs.name, "Phone name").apply {
             filters = arrayOf(InputFilter.LengthFilter(Prefs.MAX_NAME))
         }
-        AlertDialog.Builder(this)
-            .setTitle("This phone's name")
-            .setMessage("Other phones show this name in their list and alerts.")
-            .setView(padded(input))
-            .setPositiveButton("Save") { _, _ ->
+        Sheet(this, ui)
+            .title("This phone's name")
+            .text("Other phones show this name in their list and alerts.")
+            .add(input)
+            .action("Save", Ui.Style.PRIMARY) {
                 prefs.name = input.text.toString()
                 nameChanged()
             }
-            .setNeutralButton("Use model name") { _, _ ->
+            .action("Use device name", Ui.Style.GHOST) {
                 prefs.name = ""
                 nameChanged()
             }
-            .setNegativeButton("Cancel", null)
+            .showKeyboard()
             .show()
     }
 
@@ -504,26 +541,21 @@ class MainActivity : Activity() {
     }
 
     private fun editServer() {
-        val input = EditText(this).apply {
-            setText(prefs.server)
-            setSelection(text.length)
-            setSingleLine(true)
+        val input = ui.input(prefs.server, "https://ntfy.sh").apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
-        AlertDialog.Builder(this)
-            .setTitle("Relay server")
-            .setMessage(
+        Sheet(this, ui)
+            .title("Relay server")
+            .text(
                 "Keep https://ntfy.sh to use the free public relay, or enter your own ntfy server. " +
-                    "All phones in a group must use the same server. The QR code carries it, " +
-                    "so pair again after you change it."
+                    "All phones in a group must use the same server. The QR code carries it, so pair again after you change it."
             )
-            .setView(padded(input))
-            .setPositiveButton("Save") { _, _ ->
+            .add(input)
+            .action("Save", Ui.Style.PRIMARY) {
                 val server = Pairing.normalizeServer(input.text.toString())
                 if (server == null) toast("Enter a URL that starts with https://") else setServer(server)
             }
-            .setNeutralButton("Use ntfy.sh") { _, _ -> setServer(Pairing.DEFAULT_SERVER) }
-            .setNegativeButton("Cancel", null)
+            .action("Use ntfy.sh", Ui.Style.GHOST) { setServer(Pairing.DEFAULT_SERVER) }
             .show()
     }
 
@@ -539,37 +571,32 @@ class MainActivity : Activity() {
 
     private fun batteryHelp() {
         val state = if (isUnrestricted()) {
-            "Battery usage is Unrestricted. Good.\n\n"
+            "Battery use is Unrestricted. Good."
         } else {
-            "Battery optimization is on, so Android may pause ChargeWatch.\n\n"
+            "Battery optimization is on, so Android may pause ChargeWatch."
         }
-        AlertDialog.Builder(this)
-            .setTitle("Background and battery")
-            .setMessage(
-                state +
-                    "ChargeWatch keeps one quiet connection open and sends a tiny update when the battery level changes.\n\n" +
-                    "If updates stop arriving:\n" +
-                    "• Set battery usage to Unrestricted.\n" +
-                    "• Samsung: keep ChargeWatch out of Sleeping apps and Deep sleeping apps.\n" +
-                    "• Xiaomi, Oppo, Vivo, OnePlus, Huawei: turn on Autostart and lock the app in Recents.\n\n" +
-                    "dontkillmyapp.com has steps for each phone brand."
+        val sheet = Sheet(this, ui)
+            .title("Background and battery")
+            .text(
+                "$state\n\nChargeWatch keeps one quiet connection open and sends a tiny update when the battery level changes. " +
+                    "If updates stop arriving, set battery use to Unrestricted. Xiaomi, Oppo, Vivo, OnePlus and Huawei phones " +
+                    "also need Autostart. Samsung phones must keep ChargeWatch out of Sleeping apps."
             )
-            .setPositiveButton("Battery settings") { _, _ -> requestUnrestricted() }
-            .setNeutralButton("dontkillmyapp.com") { _, _ -> openUrl("https://dontkillmyapp.com/") }
-            .setNegativeButton("Close", null)
-            .show()
+            .action("Battery settings", Ui.Style.PRIMARY) { requestUnrestricted() }
+        if (isXiaomi()) sheet.action("Autostart settings") { openAutostart() }
+        sheet.action("Steps for my phone brand", Ui.Style.GHOST) { openUrl("https://dontkillmyapp.com/") }.show()
     }
 
     private fun about() {
-        AlertDialog.Builder(this)
-            .setTitle("ChargeWatch ${BuildConfig.VERSION_NAME}")
-            .setMessage(
+        Sheet(this, ui)
+            .title("ChargeWatch ${BuildConfig.VERSION_NAME}")
+            .text(
                 "Get a notification on one phone when your other phone is charged.\n\n" +
-                    "Free and open source. Messages go through ntfy.sh, a free push relay. " +
-                    "There is no account and no ChargeWatch server."
+                    "Free and open source. Messages go through ntfy.sh, a free push relay. There is no account and no ChargeWatch server.\n\n" +
+                    "Fonts: IBM Plex and Barlow, SIL Open Font License."
             )
-            .setPositiveButton("Source code") { _, _ -> openUrl("https://github.com/Sowan3k/chargewatch") }
-            .setNegativeButton("Close", null)
+            .action("Source code", Ui.Style.PRIMARY) { openUrl("https://github.com/Sowan3k/chargewatch") }
+            .action("Close", Ui.Style.GHOST)
             .show()
     }
 
@@ -592,6 +619,11 @@ class MainActivity : Activity() {
     private fun isUnrestricted(): Boolean =
         getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(packageName) ?: true
 
+    private fun isXiaomi(): Boolean =
+        listOf("xiaomi", "redmi", "poco").any {
+            Build.MANUFACTURER.equals(it, ignoreCase = true) || Build.BRAND.equals(it, ignoreCase = true)
+        }
+
     /** Asks Android to exempt the app from battery optimization ("Unrestricted"). */
     @SuppressLint("BatteryLife")
     private fun requestUnrestricted() {
@@ -607,6 +639,12 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Xiaomi's Autostart list. Without Autostart, MIUI and HyperOS stop background apps. */
+    private fun openAutostart() = tryStart(
+        Intent().setClassName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+    )
+
     private fun openUrl(url: String) = tryStart(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 
     private fun tryStart(vararg intents: Intent) {
@@ -621,70 +659,6 @@ class MainActivity : Activity() {
         toast("Could not open settings on this phone.")
     }
 
-    // ---- Small view helpers ----
-
-    private fun dp(v: Int): Int =
-        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
-
-    private fun text(s: String, sp: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
-        text = s
-        textSize = sp
-        setTextColor(color)
-        if (bold) typeface = Typeface.DEFAULT_BOLD
-    }
-
-    private fun row() = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-    }
-
-    private fun half(end: Boolean) = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
-        topMargin = dp(8)
-        if (end) marginEnd = dp(6) else marginStart = dp(6)
-    }
-
-    private fun card() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(14), dp(16), dp(14))
-        background = GradientDrawable().apply {
-            cornerRadius = dp(16).toFloat()
-            setColor(c.card)
-        }
-        layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
-    }
-
-    private fun banner(title: String, body: String, action: String, onClick: () -> Unit) = card().apply {
-        addView(text(title, 16f, c.warn, bold = true))
-        addView(text(body, 14f, c.sub).apply { setPadding(0, dp(4), 0, 0) })
-        addView(button(action, primary = true, onClick = onClick))
-    }
-
-    private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 15f
-        stateListAnimator = null
-        minHeight = dp(48)
-        setTextColor(if (primary) c.onAccent else c.accent)
-        val shape = GradientDrawable().apply {
-            cornerRadius = dp(12).toFloat()
-            if (primary) {
-                setColor(c.accent)
-            } else {
-                setColor(c.card)
-                setStroke(dp(1), c.accent)
-            }
-        }
-        background = RippleDrawable(ColorStateList.valueOf(0x33808080), shape, null)
-        layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
-        setOnClickListener { onClick() }
-    }
-
-    private fun padded(view: View) = FrameLayout(this).apply {
-        setPadding(dp(20), dp(8), dp(20), 0)
-        addView(view)
-    }
-
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     private fun host(server: String) = Uri.parse(server).host ?: server
@@ -693,8 +667,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_NOTIFICATIONS = 1
-        private const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
-        private const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
         private val THRESHOLDS = intArrayOf(0, 50, 60, 70, 75, 80, 85, 90, 95)
     }
 }

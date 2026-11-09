@@ -47,7 +47,7 @@ def wait(fn, timeout=30, step=1.5):
     end = time.time() + timeout
     while True:
         value = fn()
-        if value or time.time() > end:
+        if (value is not None and value is not False and value != [] and value != "") or time.time() > end:
             return value
         time.sleep(step)
 
@@ -79,6 +79,16 @@ def tap(label, timeout=20):
     node = wait(find, timeout)
     if node is None:
         check(False, f"button '{label}' is on screen")
+        return False
+    x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
+    sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
+    return True
+
+
+def tap_desc(description, timeout=20):
+    node = wait(lambda: next((n for n in ui_nodes() if n.get("content-desc") == description), None), timeout)
+    if node is None:
+        check(False, f"'{description}' button is on screen")
         return False
     x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
     sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
@@ -185,9 +195,23 @@ def main():
     time.sleep(8)
     check("Test Phone is" not in notifications(), "replaying the backlog does not repeat alerts")
     texts = screen_text()
-    check("Test Phone" in texts and "100%" in texts, "main screen lists Test Phone at 100%")
+    check("Test Phone" in texts and "100" in texts, "main screen lists Test Phone at 100%")
     check(any(t.startswith("Updated") for t in texts), "main screen shows when Test Phone last updated")
     screenshot("3-main")
+
+    # Settings sheet, then the same screen in dark mode
+    if tap_desc("Settings"):
+        check(wait(lambda: "Alert level" in screen_text(), 10), "settings sheet opens")
+        time.sleep(1)
+        screenshot("4-settings")
+        sh("input keyevent KEYCODE_BACK")
+        time.sleep(1)
+    sh("cmd uimode night yes")
+    time.sleep(4)
+    check(wait(lambda: "Test Phone" in screen_text(), 15), "dark mode renders the main screen")
+    screenshot("5-main-dark")
+    sh("cmd uimode night no")
+    time.sleep(4)
 
     # 6. Leave the group
     sh("input swipe 500 1800 500 400 300")  # scroll to the buttons on small screens

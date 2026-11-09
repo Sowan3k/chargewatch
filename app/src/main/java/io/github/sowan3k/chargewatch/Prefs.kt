@@ -2,12 +2,14 @@ package io.github.sowan3k.chargewatch
 
 import android.content.Context
 import android.os.Build
+import android.provider.Settings
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** Small wrapper around SharedPreferences. */
 class Prefs(context: Context) {
-    private val sp = context.applicationContext.getSharedPreferences("chargewatch", Context.MODE_PRIVATE)
+    private val app = context.applicationContext
+    private val sp = app.getSharedPreferences("chargewatch", Context.MODE_PRIVATE)
 
     /** Group id, or null when this phone is not paired. */
     var group: String?
@@ -77,6 +79,17 @@ class Prefs(context: Context) {
         sp.edit().remove(KEY_GROUP).remove(KEY_DEVICES).apply()
     }
 
+    /**
+     * The name people gave the phone in Settings > About phone (for example "Redmi Note 13 Pro"),
+     * or the model code (Build.MODEL) when there is none.
+     */
+    fun defaultName(): String {
+        val friendly = runCatching { Settings.Global.getString(app.contentResolver, Settings.Global.DEVICE_NAME) }
+            .getOrNull()?.trim()
+        if (!friendly.isNullOrEmpty() && friendly.length <= MAX_NAME) return friendly
+        return Build.MODEL?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_NAME) ?: "Android phone"
+    }
+
     companion object {
         const val MAX_NAME = 40
         private const val KEY_GROUP = "group"
@@ -86,6 +99,5 @@ class Prefs(context: Context) {
         private const val KEY_THRESHOLD = "threshold"
         private const val KEY_DEVICES = "devices"
 
-        fun defaultName(): String = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android phone"
     }
 }

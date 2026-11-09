@@ -2,7 +2,7 @@
 
 Your main phone is charging in another room and you are using a second phone. ChargeWatch tells the second phone when the first one hits 80% and when it is full.
 
-It is a tiny Android app (under 300 KB) with no account and no backend. Phones pair by scanning a QR code and talk through the free [ntfy.sh](https://ntfy.sh) push relay.
+It is a tiny Android app (under 500 KB) with no account and no backend. Phones pair by scanning a QR code and talk through the free [ntfy.sh](https://ntfy.sh) push relay.
 
 **[Download ChargeWatch.apk](https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.apk)** (Android 8.0 or newer)
 
@@ -33,7 +33,7 @@ To unpair, tap **Leave group**. The other phones remove this one from their list
 
 ## Settings
 
-The alert level can be Off, 50, 60, 70, 75, 80, 85, 90 or 95%. Each phone sets its own. You can also rename the phone (the default is the model name) and choose a relay server.
+The alert level can be Off, 50, 60, 70, 75, 80, 85, 90 or 95%. Each phone sets its own. You can also rename the phone (the default is the name set in Settings > About phone, or the model) and choose a relay server.
 
 ## Keeping it running in the background
 

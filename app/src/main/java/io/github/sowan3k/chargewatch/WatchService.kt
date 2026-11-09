@@ -354,6 +354,7 @@ class WatchService : Service() {
         }
         return Notification.Builder(this, CHANNEL_STATUS)
             .setSmallIcon(R.drawable.ic_notify)
+            .setColor(BRAND)
             .setContentTitle(title)
             .setContentText(text)
             .setOngoing(true)
@@ -384,6 +385,7 @@ class WatchService : Service() {
         }
         val n = Notification.Builder(this, CHANNEL_ALERTS)
             .setSmallIcon(R.drawable.ic_notify)
+            .setColor(BRAND)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
@@ -403,6 +405,7 @@ class WatchService : Service() {
         const val CHANNEL_STATUS = "status"
         private const val NOTIF_STATUS = 1
         private const val ALERT_BASE = 1000
+        private const val BRAND = 0xFF0D7A56.toInt()
 
         const val HEARTBEAT_MS = 30 * 60 * 1000L
         private const val RETRY_MS = 30 * 1000L
