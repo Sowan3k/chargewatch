@@ -122,7 +122,7 @@ jobs:
     name: Publish to the "latest" release
     # Only builds that passed the emulator test reach users, including through in-app updates.
     needs: [build, emulator-test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
