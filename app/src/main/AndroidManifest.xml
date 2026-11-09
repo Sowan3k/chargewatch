@@ -51,10 +51,11 @@
             android:name=".UpdateReceiver"
             android:exported="false" />
 
-        <!-- The low-power check alarm. -->
-        <receiver
-            android:name=".PollReceiver"
-            android:exported="false" />
+        <!-- Background checks and the "started charging" trigger, run by JobScheduler. -->
+        <service
+            android:name=".CheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Lets Google Play services fetch the QR scanner module ahead of time. -->
         <meta-data

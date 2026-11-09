@@ -56,7 +56,7 @@ class MainActivity : Activity() {
             isFillViewport = true
             addView(content)
         })
-        WatchService.createChannels(this)
+        Notifier.createChannels(this)
         if (Hub.updateInfo == null) prefs.cachedUpdate?.let(Updater::parse)?.let { Hub.setUpdate(info = it) }
         if (prefs.group != null) {
             WatchService.start(this)
@@ -68,6 +68,7 @@ class MainActivity : Activity() {
         super.onResume()
         Hub.addListener(hubListener)
         Hub.setUiVisible(true) // the service goes live while the screen is open
+        if (prefs.group != null) WatchService.start(this)
         main.post(ticker)
         if (System.currentTimeMillis() - prefs.lastUpdateCheck > UPDATE_CHECK_MS) checkForUpdate(manual = false)
     }
@@ -639,6 +640,7 @@ class MainActivity : Activity() {
     private fun leave() {
         sendLeave()
         WatchService.stop(this)
+        Background.cancel(this)
         prefs.leave()
         Hub.reset()
         getSystemService(NotificationManager::class.java)?.cancelAll()
@@ -672,6 +674,7 @@ class MainActivity : Activity() {
             Triple("This phone's name", prefs.name, ::editName),
             Triple("Relay server", host(prefs.server), ::editServer),
             Triple("Background and battery", if (isUnrestricted()) "Unrestricted" else "Battery optimization is on", ::batteryHelp),
+            Triple("Status notification", if (prefs.alwaysOn) "Always" else "Only while a phone is charging", ::pickStatusMode),
             Triple("App updates", updateLabel(), ::onUpdateRow),
             Triple("About", "Open source on GitHub", ::about),
         )
@@ -724,6 +727,31 @@ class MainActivity : Activity() {
             grid.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { if (r > 0) topMargin = ui.dp(8) })
         }
         sheet.add(grid, 18).show()
+    }
+
+    private fun pickStatusMode() {
+        val sheet = Sheet(this, ui)
+            .title("Status notification")
+            .text(
+                "Android shows a notification whenever ChargeWatch keeps a live connection. By default that only " +
+                    "happens while one of your phones is charging, so the notification appears then and goes away after.\n\n" +
+                    "Always keeps ChargeWatch running all the time, with the notification. It uses a little more battery."
+            )
+        val options = listOf(false to "Only while a phone is charging", true to "Always")
+        options.forEach { (always, label) ->
+            sheet.add(
+                ui.button(label, if (prefs.alwaysOn == always) Ui.Style.PRIMARY else Ui.Style.SECONDARY) {
+                    sheet.dismiss()
+                    if (prefs.alwaysOn != always) {
+                        prefs.alwaysOn = always
+                        if (prefs.group != null) WatchService.start(this, reload = true)
+                        render()
+                    }
+                },
+                10,
+            )
+        }
+        sheet.show()
     }
 
     private fun editName() {
@@ -790,10 +818,10 @@ class MainActivity : Activity() {
         val sheet = Sheet(this, ui)
             .title("Background and battery")
             .text(
-                "$state\n\nChargeWatch is built to sip battery. It keeps a live connection only while the app is open, " +
-                    "while this phone is on power, or while another phone in your group is charging. The rest of the time it " +
-                    "is in low-power mode: no connection, a quick check every 15 minutes that Android batches with other apps, " +
-                    "and one when you turn the screen on.\n\nIf updates stop arriving, set battery use to Unrestricted. " +
+                "$state\n\nChargeWatch is built to sip battery. It runs live, with a notification, only while one of your " +
+                    "phones is charging. The rest of the time nothing runs: Android checks for news about every 15 minutes " +
+                    "and wakes ChargeWatch when this phone is plugged in.\n\nGoing live from the background needs battery " +
+                    "use set to Unrestricted. If updates stop arriving, check that first. " +
                     "Xiaomi, Oppo, Vivo, OnePlus and Huawei phones also need Autostart. Samsung phones must keep ChargeWatch " +
                     "out of Sleeping apps."
             )

@@ -9,7 +9,7 @@ by talking to ntfy.sh directly:
   3. check that the phone publishes its battery level, and again after plugging in
   4. post fake reports from a second phone and check both alerts appear
   5. restart the app and check that replaying the backlog does not alert again
-  6. background the app: it drops to low-power mode, and a screen-on check delivers a missed alert
+  6. close the app with nothing charging: the service stops; a background check delivers a missed alert
   7. leave the group and check the "left" message and that the service stopped
 
 Usage: python3 emulator_test.py ChargeWatch.apk
@@ -142,6 +142,10 @@ def notifications():
 
 
 def service_running():
+    return "ServiceRecord" in sh(f"dumpsys activity services {PKG}")
+
+
+def service_foreground():
     return "isForeground=true" in sh(f"dumpsys activity services {PKG}")
 
 
@@ -154,6 +158,8 @@ def main():
     if not check("Success" in out, "APK installs on Android 14"):
         return
     sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
+    # The same as setting battery use to Unrestricted, which the app asks users to do.
+    sh(f"dumpsys deviceidle whitelist +{PKG}")
     for cmd in ("set ac 0", "set usb 0", "set wireless 0", "set level 60"):
         sh(f"dumpsys battery {cmd}")
     sh(f"am start -W -n {PKG}/.MainActivity")
@@ -176,7 +182,8 @@ def main():
     screenshot("2-qr")
     topic = "chargewatch-" + code.replace("-", "")
     print("topic:", topic)
-    check(wait(service_running, 20), "watch service runs as a foreground service")
+    check(wait(service_running, 20), "watch service runs while the app is open")
+    check(not service_foreground(), "no status notification while nothing is charging")
 
     # 3. Publishing
     own = wait(
@@ -192,6 +199,8 @@ def main():
         wait(lambda: any(m.get("level") == 61 and m.get("charging") is True for m in ntfy_reports(topic)), 40, 3),
         "plugging in and charging to 61% is published",
     )
+    check(wait(service_foreground, 20), "on power, the status notification appears")
+    check(wait(lambda: "This phone is charging" in notifications(), 20), "it says this phone is charging")
 
     # 4. Alerts from another phone
     other = {"v": 1, "id": "c1c1c1c1c1c1c1c1", "name": "Test Phone"}
@@ -242,23 +251,25 @@ def main():
     sh("cmd uimode night no")
     time.sleep(4)
 
-    # 6. Low-power mode: in the background, with nothing charging toward an alert, the app
-    #    closes its connection and only checks now and then (and when the screen turns on).
+    # 6. Nothing charging and the app closed: the service stops, with no notification and
+    #    no connection. The background job checks about every 15 minutes (forced here).
     sh("dumpsys battery set ac 0")  # this phone off power; Test Phone is already full
     sh("input keyevent KEYCODE_HOME")
-    check(wait(lambda: "Low-power mode" in notifications(), 30), "in the background with nothing charging, it drops to low-power mode")
+    check(wait(lambda: not service_running(), 30), "with nothing charging and the app closed, the service stops")
+    check("is charging" not in notifications() and "Watching" not in notifications(), "and the status notification is gone")
     for level, plugged in ((50, False), (79, True), (80, True)):
         ntfy_publish(topic, {**other, "level": level, "charging": plugged})
         time.sleep(2)
-    time.sleep(5)
-    check("Test Phone is 80% charged" not in notifications(), "low-power mode holds no connection open")
-    sh("input keyevent KEYCODE_SLEEP")
+    time.sleep(4)
+    check("Test Phone is 80% charged" not in notifications(), "nothing stays connected while nothing charges")
+    print(sh(f"cmd jobscheduler run -f {PKG} 1").strip())
+    check(wait(lambda: "Test Phone is 80% charged" in notifications(), 40), "the background check delivers the missed alert")
+    check(wait(service_foreground, 30), "and goes live while Test Phone charges")
+    check(wait(lambda: "Test Phone is charging" in notifications(), 20), "the notification names the charging phone")
+    sh("cmd statusbar expand-notifications")
     time.sleep(3)
-    sh("input keyevent KEYCODE_WAKEUP")
-    time.sleep(1)
-    sh("wm dismiss-keyguard")
-    check(wait(lambda: "Test Phone is 80% charged" in notifications(), 40), "turning the screen on runs a check that delivers the missed alert")
-    check(wait(lambda: "Low-power mode" not in notifications(), 20), "goes live while another phone charges toward an alert")
+    screenshot("8-charging")
+    sh("cmd statusbar collapse")
     sh(f"am start -W -n {PKG}/.MainActivity")
     time.sleep(2)
 

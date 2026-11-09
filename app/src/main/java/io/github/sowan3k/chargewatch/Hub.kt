@@ -39,7 +39,7 @@ object Hub {
     /** What the service exposes to the screen and to the poll alarm while it runs. */
     interface ServiceHooks {
         fun reevaluate()
-        fun pollAlarm()
+        fun checkNow()
     }
 
     var service: ServiceHooks? = null

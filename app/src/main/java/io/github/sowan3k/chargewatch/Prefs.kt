@@ -93,6 +93,20 @@ class Prefs(context: Context) {
         sp.edit().putString(KEY_DEVICES, arr.toString()).apply()
     }
 
+    /** Keep the service and its notification on all the time, even while nothing charges. */
+    var alwaysOn: Boolean
+        get() = sp.getBoolean(KEY_ALWAYS_ON, false)
+        set(v) = sp.edit().putBoolean(KEY_ALWAYS_ON, v).apply()
+
+    /** What this phone last sent, shared by the service and the background check. */
+    val sentLevel: Int get() = sp.getInt(KEY_SENT_LEVEL, -1)
+    val sentCharging: Boolean? get() = if (sp.contains(KEY_SENT_CHARGING)) sp.getBoolean(KEY_SENT_CHARGING, false) else null
+    val sentAt: Long get() = sp.getLong(KEY_SENT_AT, 0L)
+
+    fun markSent(level: Int, charging: Boolean, atMs: Long) {
+        sp.edit().putInt(KEY_SENT_LEVEL, level).putBoolean(KEY_SENT_CHARGING, charging).putLong(KEY_SENT_AT, atMs).apply()
+    }
+
     /** The last relay message id seen in [group], so checks only fetch what is new. */
     fun lastMsgId(group: String): String? =
         if (sp.getString(KEY_LAST_MSG_GROUP, null) == group) sp.getString(KEY_LAST_MSG, null) else null
@@ -103,7 +117,8 @@ class Prefs(context: Context) {
 
     /** Forget the group and everything learned from it. Keeps name, threshold and server. */
     fun leave() {
-        sp.edit().remove(KEY_GROUP).remove(KEY_DEVICES).remove(KEY_LAST_MSG).remove(KEY_LAST_MSG_GROUP).apply()
+        sp.edit().remove(KEY_GROUP).remove(KEY_DEVICES).remove(KEY_LAST_MSG).remove(KEY_LAST_MSG_GROUP)
+            .remove(KEY_SENT_LEVEL).remove(KEY_SENT_CHARGING).remove(KEY_SENT_AT).apply()
     }
 
     /**
@@ -141,6 +156,10 @@ class Prefs(context: Context) {
         private const val KEY_UPDATE_CHECKED = "update_checked"
         private const val KEY_UPDATE_NOTIFIED = "update_notified"
         private const val KEY_LAST_MSG = "last_msg_id"
+        private const val KEY_ALWAYS_ON = "always_on"
+        private const val KEY_SENT_LEVEL = "sent_level"
+        private const val KEY_SENT_CHARGING = "sent_charging"
+        private const val KEY_SENT_AT = "sent_at"
         private const val KEY_LAST_MSG_GROUP = "last_msg_group"
 
     }

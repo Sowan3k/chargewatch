@@ -2,9 +2,6 @@ package io.github.sowan3k.chargewatch
 
 import android.app.AlarmManager
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -27,21 +24,18 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 
 /**
- * Foreground service that does all the work, spending as little battery as it can.
+ * The live part of ChargeWatch. It only runs while it is needed:
  *
- * Live mode: a streaming connection to the relay, so alerts arrive within a second. The relay
- * sends a keepalive about every 45 s, and each one wakes the phone and its radio, so the app is
- * only live while it matters: the screen is open, this phone is on power, or another phone in
- * the group is charging (and not full yet).
+ * - while a phone is charging (this one, or another one heading for an alert): foreground,
+ *   with a "… is charging" notification and a streaming connection, so alerts arrive within
+ *   a second;
+ * - while the app is open: running quietly in the background of the open app, with no
+ *   notification, so the screen updates live;
+ * - when "Always show" is on: foreground all the time, in low-power mode while nothing charges.
  *
- * Low-power mode, the rest of the time: no connection. The app checks for news every 15 minutes
- * with an inexact, Doze-friendly alarm that Android batches with other apps (30 minutes in
- * Battery Saver), and right away when the screen turns on. A check that finds a charging phone
- * switches to live mode. Alerts still fire for transitions a check finds late (see Tracker).
- *
- * Publishing: this phone's level when it changes (fine steps only while charging), plus a
- * heartbeat every 30 minutes on power or 60 minutes on battery. Network work runs on one thread,
- * under a short wakelock, and a due heartbeat rides along with a check so the radio wakes once.
+ * The rest of the time it stops, and [Background] jobs take over: a check about every 15
+ * minutes and a job that runs when this phone is plugged in. That keeps the notification out of
+ * sight and the radio asleep while nothing is charging.
  */
 class WatchService : Service() {
 
@@ -57,26 +51,22 @@ class WatchService : Service() {
     private var group: String? = null
     private var server: String = Pairing.DEFAULT_SERVER
     private var mode = Mode.OFF
+    private var foreground = false
+    private var stopping = false
+    private var lastStartId = 0
     private var started = false
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var lastNetwork: Network? = null
 
     @Volatile private var lastMsgId: String? = null
-    private var polling = false
-    private var pollArmed = false
-    private var pollFailed = false
-    private var lastPollAt = 0L
+    private var checking = false
+    private var lastCheckAt = 0L
 
     // This phone's battery, from the last ACTION_BATTERY_CHANGED.
     private var level = -1
     private var charging = false
 
-    // What was last published.
-    private var sentLevel = -1
-    private var sentCharging: Boolean? = null
-    private var sentAt = 0L
     @Volatile private var sendFailed = false
-
     private var lastStatus: Pair<String, String>? = null
 
     private val heartbeat = AlarmManager.OnAlarmListener {
@@ -102,19 +92,16 @@ class WatchService : Service() {
         }
     }
 
-    /** In low-power mode, turning the screen on triggers a check, so the list is fresh when you look. */
+    /** With "Always show" in low-power mode, turning the screen on triggers a check. */
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (mode == Mode.LOW_POWER && SystemClock.elapsedRealtime() - lastPollAt > SCREEN_POLL_GAP_MS) pollNow()
+            if (mode == Mode.LOW_POWER && SystemClock.elapsedRealtime() - lastCheckAt > SCREEN_CHECK_GAP_MS) checkNow()
         }
     }
 
     private val hooks = object : Hub.ServiceHooks {
         override fun reevaluate() = applyMode()
-        override fun pollAlarm() {
-            pollArmed = false
-            pollNow()
-        }
+        override fun checkNow() = this@WatchService.checkNow()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -123,41 +110,45 @@ class WatchService : Service() {
         super.onCreate()
         prefs = Prefs(this)
         tracker = Tracker(prefs.deviceId)
-        createChannels(this)
-        goForeground()
+        Notifier.createChannels(this)
         Hub.service = hooks
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Every startForegroundService() call must be answered with startForeground().
-        goForeground()
+        lastStartId = startId
+        stopping = false
+        // A start from the background (a job, a boot, a restart) must go foreground at once.
+        if (intent == null || intent.action == ACTION_LIVE) {
+            if (!goForeground()) {
+                stopEverything()
+                return START_NOT_STICKY
+            }
+        }
         val g = prefs.group
         if (g == null) {
-            stopSelf()
+            stopEverything()
             return START_NOT_STICKY
         }
         if (g != group || prefs.server != server) {
             switchGroup(g, prefs.server)
-        } else if (intent?.action == ACTION_RELOAD) {
-            // The name may have changed. Send it right away.
-            publishNow()
-        }
-        when (intent?.action) {
-            ACTION_FORGET -> intent?.getStringExtra(EXTRA_ID)?.let { id ->
-                if (tracker.remove(id) != null) {
-                    scheduleSave()
-                    pushToHub()
+        } else {
+            when (intent?.action) {
+                ACTION_RELOAD -> publishNow() // the name may have changed
+                ACTION_FORGET -> intent?.getStringExtra(EXTRA_ID)?.let { id ->
+                    if (tracker.remove(id) != null) {
+                        scheduleSave()
+                        pushToHub()
+                    }
                 }
             }
-            ACTION_POLL -> pollNow()
+            applyMode()
         }
-        return START_STICKY
+        return if (foreground) START_STICKY else START_NOT_STICKY
     }
 
     override fun onDestroy() {
         if (Hub.service === hooks) Hub.service = null
         stopStream()
-        cancelPollAlarm()
         if (started) {
             runCatching { unregisterReceiver(batteryReceiver) }
             runCatching { unregisterReceiver(screenReceiver) }
@@ -168,13 +159,14 @@ class WatchService : Service() {
         }
         main.removeCallbacksAndMessages(null)
         saveRunnable.run()
+        if (prefs.group != null) Background.schedule(this, charging)
         // Late callbacks from other threads check this and do nothing.
         group = null
         net.shutdown()
         super.onDestroy()
     }
 
-    // ---- Group, modes and checks ----
+    // ---- Lifecycle and modes ----
 
     private fun switchGroup(g: String, s: String) {
         stopStream()
@@ -185,40 +177,59 @@ class WatchService : Service() {
         tracker.clear()
         tracker.restore(prefs.loadDevices())
         pushToHub()
-        sentCharging = null
         startOnce()
-        if (level >= 0) publishNow()
         applyMode()
-        // Catch up at once; live mode does this by itself when its stream connects.
-        if (mode == Mode.LOW_POWER) pollNow()
+        if (stopping) return
+        if (level >= 0) maybePublish(force = prefs.sentCharging == null)
+        if (mode == Mode.LOW_POWER) checkNow()
         maybeCheckUpdate()
     }
 
-    /** Live while the screen is open, while on power, or while another phone is charging toward an alert. */
-    private fun wantLive(): Boolean {
-        if (Hub.uiVisible || charging) return true
-        val now = System.currentTimeMillis() / 1000
-        val selfId = prefs.deviceId
-        return tracker.devices.any { d ->
-            d.id != selfId && d.charging && d.level < 100 && !Tracker.isStale(d, now)
-        }
-    }
+    private fun anotherPhoneCharging() =
+        Background.anotherPhoneCharging(tracker.devices, prefs.deviceId, System.currentTimeMillis() / 1000)
 
     private fun applyMode() {
         val g = group ?: return
-        if (wantLive()) {
-            cancelPollAlarm()
+        if (stopping) return
+        val otherCharging = anotherPhoneCharging()
+        val needForeground = prefs.alwaysOn || charging || otherCharging
+        if (!needForeground && !Hub.uiVisible) {
+            stopEverything()
+            return
+        }
+        if (needForeground) {
+            if (!foreground && !goForeground()) {
+                // Android refused (no battery exemption and the app is not on screen).
+                stopEverything()
+                return
+            }
+        } else if (foreground) {
+            // Only the open screen needs us: drop the notification, keep running quietly.
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            foreground = false
+            lastStatus = null
+        }
+        if (charging || otherCharging || Hub.uiVisible) {
             if (subscriber == null) startStream(g)
             mode = Mode.LIVE
         } else {
-            if (subscriber != null) stopStream()
-            if (mode != Mode.LOW_POWER) {
-                mode = Mode.LOW_POWER
-                Hub.setStatus("Low-power mode", true)
-            }
-            armPollAlarm()
+            stopStream()
+            if (mode != Mode.LOW_POWER) Hub.setStatus("Low-power mode", true)
+            mode = Mode.LOW_POWER
         }
         scheduleStatus()
+    }
+
+    /** Stops the service. The background jobs keep watching (see onDestroy). */
+    private fun stopEverything() {
+        if (stopping) return
+        stopping = true
+        stopStream()
+        if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
+        foreground = false
+        Hub.setStatus("", false)
+        // With the id, a start request that arrived meanwhile keeps the service alive.
+        stopSelf(lastStartId)
     }
 
     private fun startStream(g: String) {
@@ -243,14 +254,14 @@ class WatchService : Service() {
         subscriber = null
     }
 
-    /** One check: fetch what is new since the last message, then decide the mode again. */
-    private fun pollNow() {
+    /** One check (used by the 15-minute job and, in low-power mode, by screen-on). */
+    private fun checkNow() {
         val g = group ?: return
-        if (polling) return
-        polling = true
-        lastPollAt = SystemClock.elapsedRealtime()
-        // Send a heartbeat that would fall due before the next check now, in the same radio wake-up.
-        if (level >= 0 && lastPollAt - sentAt >= heartbeatMs() - pollIntervalMs()) publishNow()
+        if (checking) return
+        if (mode == Mode.LIVE) return // the stream already delivers everything
+        checking = true
+        lastCheckAt = SystemClock.elapsedRealtime()
+        maybePublish()
         val srv = server
         val since = lastMsgId ?: "12h"
         runOnNetwork {
@@ -260,9 +271,8 @@ class WatchService : Service() {
                 null
             }
             main.post {
-                polling = false
+                checking = false
                 if (g != group) return@post
-                pollFailed = lines == null
                 lines?.forEach { line ->
                     val parsed = Relay.parse(line) ?: return@forEach
                     if (parsed.first.isNotEmpty()) lastMsgId = parsed.first
@@ -274,58 +284,10 @@ class WatchService : Service() {
         }
     }
 
-    private fun pollIntervalMs(): Long {
-        val saver = getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
-        return if (saver) 2 * POLL_INTERVAL_MS else POLL_INTERVAL_MS
-    }
-
-    private fun pollIntent(): PendingIntent = PendingIntent.getBroadcast(
-        this,
-        0,
-        Intent(this, PollReceiver::class.java).setPackage(packageName),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-    )
-
-    /**
-     * An inexact alarm that may run in Doze, at most every 9 minutes there. It needs no
-     * exact-alarm permission and Android may batch it with other apps' wake-ups.
-     */
-    private fun armPollAlarm() {
-        if (pollArmed) return
-        val am = getSystemService(AlarmManager::class.java) ?: return
-        am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + pollIntervalMs(), pollIntent())
-        pollArmed = true
-    }
-
-    private fun cancelPollAlarm() {
-        if (!pollArmed) return
-        getSystemService(AlarmManager::class.java)?.cancel(pollIntent())
-        pollArmed = false
-    }
-
-    /** Once a day, look for a new release and post a notification about it (once per version). */
     private fun maybeCheckUpdate() {
-        val now = System.currentTimeMillis()
-        if (now - prefs.lastUpdateCheck < UPDATE_CHECK_MS) return
-        prefs.lastUpdateCheck = now
         runOnNetwork {
-            val info = runCatching { Updater.fetch() }.getOrNull() ?: return@runOnNetwork
-            main.post {
-                prefs.cachedUpdate = Updater.toJson(info)
-                Hub.setUpdate(info = info)
-                if (info.isNewer && prefs.notifiedVersion < info.versionCode) {
-                    prefs.notifiedVersion = info.versionCode
-                    val n = Notification.Builder(this, CHANNEL_UPDATES)
-                        .setSmallIcon(R.drawable.ic_notify)
-                        .setColor(BRAND)
-                        .setContentTitle("ChargeWatch ${info.versionName} is available")
-                        .setContentText("Tap to update. Your group and settings stay.")
-                        .setAutoCancel(true)
-                        .setContentIntent(openApp(this))
-                        .build()
-                    getSystemService(NotificationManager::class.java)?.notify(NOTIF_UPDATE, n)
-                }
-            }
+            val info = Background.checkUpdateIfDue(this) ?: return@runOnNetwork
+            main.post { Hub.setUpdate(info = info) }
         }
     }
 
@@ -351,7 +313,6 @@ class WatchService : Service() {
                     // A new network (Wi-Fi to mobile, for example) leaves the old socket hanging.
                     if (previous != null && previous != network) subscriber?.kick() else subscriber?.retryNow()
                     if (sendFailed) publishNow()
-                    if (mode == Mode.LOW_POWER && pollFailed) pollNow()
                 }
             }
         }
@@ -374,12 +335,12 @@ class WatchService : Service() {
             }
             return
         }
-        val wasLive = wantLive()
+        val wasCharging = anotherPhoneCharging()
         val update = tracker.onMessage(d, System.currentTimeMillis() / 1000, prefs.threshold)
         if (!update.changed) return
         val alert = update.alert
         if (alert != null) {
-            showAlert(d, alert)
+            Notifier.alert(this, d, alert)
             // Save at once so a crash or restart cannot fire the same alert again.
             main.removeCallbacks(saveRunnable)
             saveRunnable.run()
@@ -387,7 +348,7 @@ class WatchService : Service() {
             scheduleSave()
         }
         pushToHub()
-        if (wantLive() != wasLive) applyMode()
+        if (anotherPhoneCharging() != wasCharging) applyMode()
     }
 
     private fun onSubscriberState(st: Subscriber.State, g: String) {
@@ -444,33 +405,37 @@ class WatchService : Service() {
         if (old == null || old.level != level || old.charging != charging || old.name != name) {
             Hub.setSelf(Device(prefs.deviceId, name, level, charging, System.currentTimeMillis() / 1000))
         }
+        if (group == null) return
         maybePublish()
-        if (charging != wasCharging) applyMode()
+        if (charging != wasCharging) {
+            applyMode()
+            scheduleStatus()
+        }
     }
 
     /**
      * Keeps the message count low (the public relay has a daily limit per IP):
      * every 1 % while charging above 50 %, where alerts happen, and every 5 % otherwise.
      * A heartbeat covers phones whose level does not move, such as one sitting at 100 %.
+     * The last sent state is stored, so the background check continues where this left off.
      */
-    private fun maybePublish() {
-        if (group == null || level < 0) return
-        val now = SystemClock.elapsedRealtime()
+    private fun maybePublish(force: Boolean = false) {
+        if (group == null || level < 0 || stopping) return
+        val now = System.currentTimeMillis()
         val step = if (charging && level >= FINE_FROM) 1 else COARSE_STEP
-        val due = sentCharging == null ||
-            charging != sentCharging ||
-            abs(level - sentLevel) >= step ||
-            now - sentAt >= heartbeatMs() ||
-            (sendFailed && now - sentAt >= RETRY_MS)
+        val due = force ||
+            prefs.sentCharging != charging ||
+            prefs.sentLevel < 0 ||
+            abs(level - prefs.sentLevel) >= step ||
+            now - prefs.sentAt >= heartbeatMs() ||
+            (sendFailed && now - prefs.sentAt >= RETRY_MS)
         if (due) publishNow()
     }
 
     private fun publishNow() {
         val g = group ?: return
         if (level < 0) return
-        sentLevel = level
-        sentCharging = charging
-        sentAt = SystemClock.elapsedRealtime()
+        prefs.markSent(level, charging, System.currentTimeMillis())
         sendFailed = false
         val hbSec = (heartbeatMs() / 1000).toInt()
         send(server, Pairing.topic(g), Relay.report(prefs.deviceId, prefs.name, level, charging, hbSec))
@@ -479,7 +444,7 @@ class WatchService : Service() {
 
     /**
      * Runs network work on the single network thread. The wakelock is taken here, before the
-     * hand-off, so the phone cannot fall asleep between an alarm and the request.
+     * hand-off, so the phone cannot fall asleep in between.
      */
     private fun runOnNetwork(task: () -> Unit) {
         val wakeLock = getSystemService(PowerManager::class.java)
@@ -535,56 +500,70 @@ class WatchService : Service() {
         )
     }
 
-    // ---- Notifications ----
+    // ---- The status notification ----
 
-    private fun goForeground() {
-        val n = statusNotification(statusTexts())
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_STATUS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIF_STATUS, n)
+    /** Returns false if Android refuses a foreground start right now. */
+    private fun goForeground(): Boolean {
+        val texts = statusTexts()
+        val n = statusNotification(texts)
+        return try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(Notifier.NOTIF_STATUS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(Notifier.NOTIF_STATUS, n)
+            }
+            foreground = true
+            lastStatus = texts
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 
-    /** Updates the status notification only when its text changes. */
+    /** Updates the status notification only when its text changes, and only while it is shown. */
     private fun postStatus() {
+        if (!foreground) return
         val texts = statusTexts()
         if (texts == lastStatus) return
         lastStatus = texts
-        getSystemService(NotificationManager::class.java)?.notify(NOTIF_STATUS, statusNotification(texts))
+        getSystemService(android.app.NotificationManager::class.java)
+            ?.notify(Notifier.NOTIF_STATUS, statusNotification(texts))
     }
 
     private fun statusTexts(): Pair<String, String> {
+        val now = System.currentTimeMillis() / 1000
         val others = Hub.others
-        val title = when {
-            group == null -> "ChargeWatch"
-            others.isEmpty() -> "Waiting for your other phones"
-            else -> others.joinToString(" · ") { d ->
-                "${d.name} ${d.level}%" + if (d.charging) " charging" else ""
+        val chargingOthers = others.filter { it.charging && it.level < 100 && !Tracker.isStale(it, now) }
+        val threshold = prefs.threshold
+        val link = if (mode == Mode.LIVE && !Hub.connected && Hub.status.isNotEmpty()) Hub.status else null
+        return when {
+            chargingOthers.isNotEmpty() -> {
+                val d = chargingOthers.first()
+                val more = if (chargingOthers.size > 1) " (+${chargingOthers.size - 1} more)" else ""
+                val plan = if (threshold in 1..99 && d.level < threshold) "Alerts at $threshold% and when full" else "Alert when full"
+                "${d.name} is charging · ${d.level}%$more" to (link ?: plan)
+            }
+            charging && level >= 0 -> "This phone is charging · $level%" to (link ?: "Sharing its battery with your group")
+            others.isEmpty() -> "ChargeWatch" to "Waiting for your other phones"
+            else -> {
+                val summary = others.joinToString(" · ") { "${it.name} ${it.level}%" }
+                val minutes = 15
+                summary to (link ?: if (mode == Mode.LOW_POWER) "Low-power mode · checks about every $minutes min" else "Watching ${others.size} phone" + if (others.size == 1) "" else "s")
             }
         }
-        val minutes = pollIntervalMs() / 60_000
-        val text = when {
-            group == null -> "Starting…"
-            mode == Mode.LOW_POWER -> "Low-power mode · checks every $minutes min"
-            Hub.connected -> "Live · watching ${others.size} phone" + (if (others.size == 1) "" else "s")
-            Hub.status.isNotEmpty() -> Hub.status
-            else -> "Starting…"
-        }
-        return title to text
     }
 
     private fun statusNotification(texts: Pair<String, String>): Notification =
-        Notification.Builder(this, CHANNEL_STATUS)
+        Notification.Builder(this, Notifier.CHANNEL_STATUS)
             .setSmallIcon(R.drawable.ic_notify)
-            .setColor(BRAND)
+            .setColor(Notifier.BRAND)
             .setContentTitle(texts.first)
             .setContentText(texts.second)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .setContentIntent(openApp(this))
+            .setContentIntent(Notifier.openApp(this))
             .apply {
                 if (Build.VERSION.SDK_INT >= 31) {
                     setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
@@ -592,113 +571,39 @@ class WatchService : Service() {
             }
             .build()
 
-    private fun showAlert(d: Device, alert: Alert) {
-        val title: String
-        val text: String
-        when (alert) {
-            Alert.THRESHOLD -> {
-                title = "${d.name} is ${d.level}% charged"
-                text = "Still charging. Unplug it now if that is enough."
-            }
-            Alert.FULL -> {
-                title = "${d.name} is fully charged"
-                text = "You can use it now."
-            }
-        }
-        val n = Notification.Builder(this, CHANNEL_ALERTS)
-            .setSmallIcon(R.drawable.ic_notify)
-            .setColor(BRAND)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setAutoCancel(true)
-            .setCategory(Notification.CATEGORY_STATUS)
-            .setContentIntent(openApp(this))
-            .build()
-        // One notification slot per phone: "full" replaces the earlier "80 %" alert.
-        getSystemService(NotificationManager::class.java)?.notify(ALERT_BASE + (d.id.hashCode() and 0xffff), n)
-    }
-
     companion object {
         const val ACTION_START = "io.github.sowan3k.chargewatch.START"
+        const val ACTION_LIVE = "io.github.sowan3k.chargewatch.LIVE"
         const val ACTION_RELOAD = "io.github.sowan3k.chargewatch.RELOAD"
         const val ACTION_FORGET = "io.github.sowan3k.chargewatch.FORGET"
-        const val ACTION_POLL = "io.github.sowan3k.chargewatch.POLL"
         private const val EXTRA_ID = "id"
-        const val CHANNEL_ALERTS = "alerts"
-        const val CHANNEL_STATUS = "status"
-        const val CHANNEL_UPDATES = "updates"
-        private const val NOTIF_STATUS = 1
-        private const val NOTIF_UPDATE = 2
-        private const val UPDATE_CHECK_MS = 24 * 60 * 60 * 1000L
-        private const val ALERT_BASE = 1000
-        private const val BRAND = 0xFF0D7A56.toInt()
 
-        private const val HEARTBEAT_CHARGING_MS = 30 * 60 * 1000L
-        private const val HEARTBEAT_BATTERY_MS = 60 * 60 * 1000L
-        private const val POLL_INTERVAL_MS = 15 * 60 * 1000L
-        private const val SCREEN_POLL_GAP_MS = 2 * 60 * 1000L
+        const val HEARTBEAT_CHARGING_MS = 30 * 60 * 1000L
+        const val HEARTBEAT_BATTERY_MS = 60 * 60 * 1000L
+        private const val SCREEN_CHECK_GAP_MS = 2 * 60 * 1000L
         private const val RETRY_MS = 30 * 1000L
         private const val FINE_FROM = 50
         private const val COARSE_STEP = 5
 
+        /** From the open app. A plain start: the service decides whether it needs a notification. */
         fun start(context: Context, reload: Boolean = false) {
             val i = Intent(context, WatchService::class.java)
                 .setAction(if (reload) ACTION_RELOAD else ACTION_START)
-            context.startForegroundService(i)
+            try {
+                context.startService(i)
+            } catch (e: Exception) {
+                Background.startLive(context)
+            }
         }
 
         /** Removes a phone from the list until it reports again. */
         fun forget(context: Context, id: String) {
             val i = Intent(context, WatchService::class.java).setAction(ACTION_FORGET).putExtra(EXTRA_ID, id)
-            context.startForegroundService(i)
+            runCatching { context.startService(i) }
         }
 
         fun stop(context: Context) {
             context.stopService(Intent(context, WatchService::class.java))
-        }
-
-        fun createChannels(context: Context) {
-            val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ALERTS, "Charge alerts", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "When another phone reaches your alert level or is fully charged"
-                }
-            )
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_UPDATES, "App updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "When a new version of ChargeWatch is ready to install"
-                }
-            )
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_STATUS, "Background sync", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Keeps ChargeWatch running. You can hide this channel."
-                    setShowBadge(false)
-                }
-            )
-        }
-
-        fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-    }
-}
-
-/** The low-power check alarm. Hands the check to the running service, or starts it. */
-class PollReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val hooks = Hub.service
-        if (hooks != null) {
-            hooks.pollAlarm()
-            return
-        }
-        if (Prefs(context).group == null) return
-        try {
-            context.startForegroundService(Intent(context, WatchService::class.java).setAction(WatchService.ACTION_POLL))
-        } catch (e: Exception) {
-            // Background start not allowed (battery optimization on): the next app open restarts it.
         }
     }
 }

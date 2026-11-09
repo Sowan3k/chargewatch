@@ -56,21 +56,25 @@ To unpair, tap **Leave group**. The other phones remove this one from their list
 
 ## Settings
 
-The alert level can be Off, 50, 60, 70, 75, 80, 85, 90 or 95%. Each phone sets its own. You can also rename the phone (the default is the name set in Settings > About phone, or the model) and choose a relay server.
+The alert level can be Off, 50, 60, 70, 75, 80, 85, 90 or 95%. Each phone sets its own. Status notification chooses between showing the notification only while a phone is charging (the default) and always. You can also rename the phone (the default is the name set in Settings > About phone, or the model) and choose a relay server.
 
-## Battery use
+## Battery use and the notification
 
-ChargeWatch is designed to cost almost nothing when nothing is charging.
+ChargeWatch is designed to cost almost nothing, and to stay out of sight, while nothing is charging.
 
-A live connection to the relay is the expensive part: ntfy sends a keepalive about every 45 seconds, and each one wakes the phone and its radio. So the app is only live when that is worth it: while the app is open, while this phone is on power (the charger pays for it), or while another phone in your group is charging toward an alert. That window is usually an hour or two.
+While a phone is charging (this one, or another one heading for an alert), ChargeWatch runs live: a foreground service with a streaming connection, so alerts arrive within a second. Android requires a notification for that, so you see "Poco X8 is charging · 62%" (or "This phone is charging") until the charge is done, then it goes away. The live connection is the expensive part (ntfy sends a keepalive about every 45 seconds, and each one wakes the radio), which is why it only runs during a charge, usually an hour or two, or while the app is open.
 
-The rest of the time it runs in low-power mode. The connection is closed. The app checks for news every 15 minutes (30 in Battery Saver) with an inexact alarm that Android can batch with other apps' wake-ups and that respects Doze, and it checks right away when you turn the screen on. A check that finds a charging phone switches to live mode. Alerts still fire for transitions a check finds up to 20 minutes late, and never twice.
+The rest of the time nothing runs: no service, no notification, no connection. Android's JobScheduler runs a short check about every 15 minutes, only when there is a network, batched with other apps' work and held during Doze. A second job runs the moment this phone is plugged in. A check fetches what is new, posts any alert, sends this phone's level if it is due, and goes live if another phone has started charging. Alerts still fire for transitions a check finds up to 20 minutes late, and never twice.
 
-Other details: battery changes are only sent in 1% steps while charging above 50% (5% steps otherwise). Heartbeats go out every 30 minutes on power and every 60 minutes on battery, and each report says which, so other phones know when to call it offline. A heartbeat that is almost due is sent in the same wake-up as a check. All network work runs on one thread under a short wakelock. With no network, the app waits for the connection to come back instead of retrying on a timer. The status notification shows the current mode ("Live" or "Low-power mode") and is only updated when its text changes.
+If you prefer the notification all the time, Settings > Status notification > Always keeps the service running, in low-power mode while nothing charges (checks every 15 minutes and when you turn the screen on).
+
+Going live from a background check needs battery use set to Unrestricted. Without it, the checks still deliver alerts and send the level, just less often.
+
+Other details: battery changes are only sent in 1% steps while charging above 50% (5% steps otherwise). Heartbeats go out every 30 minutes on power and every 60 minutes on battery, and each report says which, so other phones know when to call it offline. All network work runs on one thread under a short wakelock. With no network, the app waits for the connection to come back instead of retrying on a timer. The notification is only updated when its text changes.
 
 ## Keeping it running in the background
 
-ChargeWatch runs a foreground service with a small notification. It restarts after a reboot and after an app update. Most problems come from aggressive battery savers, so if updates stop arriving check these:
+ChargeWatch runs a foreground service with a notification while a phone is charging, and background jobs the rest of the time. Both survive a reboot and an app update. Most problems come from aggressive battery savers, so if updates stop arriving check these:
 
 - Battery usage for ChargeWatch is set to Unrestricted (Settings, Apps, ChargeWatch, Battery).
 - On Samsung, ChargeWatch is not in Sleeping apps or Deep sleeping apps.
