@@ -41,7 +41,17 @@ def check(ok, what):
     print(("PASS  " if ok else "FAIL  ") + what, flush=True)
     if not ok:
         failures.append(what)
+        if len(failures) <= 2:
+            describe_screen()
     return ok
+
+
+def describe_screen():
+    """Prints what is on screen, to explain a failure without the screenshots."""
+    top = [l.strip() for l in sh("dumpsys activity activities").splitlines() if "mResumedActivity" in l or "topResumedActivity" in l]
+    print("      resumed:", top[:2])
+    print("      windows:", [l.strip() for l in sh("dumpsys window windows").splitlines() if "mCurrentFocus" in l][:1])
+    print("      texts:", screen_text()[:25])
 
 
 def wait(fn, timeout=30, step=1.5):
@@ -162,6 +172,10 @@ def main():
     sh(f"dumpsys deviceidle whitelist +{PKG}")
     for cmd in ("set ac 0", "set usb 0", "set wireless 0", "set level 60"):
         sh(f"dumpsys battery {cmd}")
+    # CI emulators sometimes show a "System UI isn't responding" dialog after boot.
+    sh("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
+    sh("input keyevent KEYCODE_HOME")
+    time.sleep(2)
     sh(f"am start -W -n {PKG}/.MainActivity")
 
     # Onboarding: name the phone (here with the system name), then the pairing step
