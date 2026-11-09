@@ -57,6 +57,7 @@ class MainActivity : Activity() {
             addView(content)
         })
         WatchService.createChannels(this)
+        if (Hub.updateInfo == null) prefs.cachedUpdate?.let(Updater::parse)?.let { Hub.setUpdate(info = it) }
         if (prefs.group != null) {
             WatchService.start(this)
             askNotificationPermission()
@@ -67,6 +68,7 @@ class MainActivity : Activity() {
         super.onResume()
         Hub.addListener(hubListener)
         main.post(ticker)
+        if (System.currentTimeMillis() - prefs.lastUpdateCheck > UPDATE_CHECK_MS) checkForUpdate(manual = false)
     }
 
     override fun onPause() {
@@ -115,7 +117,13 @@ class MainActivity : Activity() {
 
     private fun renderWelcome() {
         add(header(null), 0)
-        add(ui.eyebrow("Battery alerts between your phones", ui.brass), 36)
+        updateCard()?.let { add(it, 18) }
+        if (!prefs.nameChosen) renderNameStep() else renderPairStep()
+    }
+
+    /** Onboarding step 1: name this phone, or take the name from the system. */
+    private fun renderNameStep() {
+        add(ui.eyebrow("Battery alerts between your phones", ui.brass), 32)
         add(ui.headline("Know when your other phone is charged."), 10)
         add(
             ui.body(
@@ -126,8 +134,60 @@ class MainActivity : Activity() {
             14,
         )
 
+        val card = ui.card()
+        card.addView(ui.eyebrow("Step 1 of 2", ui.brass))
+        card.addView(ui.cardTitle("Name this phone").apply { setPadding(0, ui.dp(4), 0, 0) })
+        card.addView(ui.body("Your other phones show this name in their list and alerts.").apply { setPadding(0, ui.dp(4), 0, 0) })
+        val input = ui.input("", "For example, Work phone").apply {
+            filters = arrayOf(InputFilter.LengthFilter(Prefs.MAX_NAME))
+        }
+        card.addView(input, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(14) })
+        val system = prefs.defaultName()
+        val suggest = ui.row()
+        suggest.addView(ui.button("Use system name") {
+            input.setText(system)
+            input.setSelection(input.text.length)
+        }, LinearLayout.LayoutParams(WRAP, WRAP))
+        suggest.addView(
+            ui.caption(system).apply {
+                setPadding(ui.dp(12), 0, 0, 0)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        card.addView(suggest, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(10) })
+        card.addView(
+            ui.button("Continue", Ui.Style.PRIMARY) { saveName(input.text.toString(), system) },
+            LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(16) },
+        )
+        add(card, 24)
+        add(trustLine(), 18)
+    }
+
+    private fun saveName(typed: String, system: String) {
+        val name = typed.trim()
+        // An empty name, or the system name, keeps following the system name.
+        prefs.name = if (name.isEmpty() || name == system) "" else name
+        prefs.nameChosen = true
+        if (prefs.group != null) WatchService.start(this, reload = true)
+        render()
+    }
+
+    /** Onboarding step 2: create or join a group. */
+    private fun renderPairStep() {
+        add(ui.eyebrow("Step 2 of 2", ui.brass), 32)
+        add(ui.headline("Pair your phones"), 10)
+        val who = ui.row()
+        who.addView(ui.body("This phone is called ${prefs.name}.", sp = 16f), LinearLayout.LayoutParams(0, WRAP, 1f))
+        who.addView(ui.button("Change", Ui.Style.GHOST) {
+            prefs.nameChosen = false
+            render()
+        })
+        add(who, 6)
+
         val steps = ui.card()
-        steps.addView(ui.cardTitle("Pair your phones"))
+        steps.addView(ui.cardTitle("How it works"))
         listOf(
             "On one phone, tap Create group. It shows a QR code.",
             "On the other phone, tap Scan QR code.",
@@ -144,7 +204,7 @@ class MainActivity : Activity() {
             row.addView(ui.body(step, ui.fg), LinearLayout.LayoutParams(0, WRAP, 1f))
             steps.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(14) })
         }
-        add(steps, 24)
+        add(steps, 18)
 
         add(ui.button("Create group", Ui.Style.PRIMARY) { createGroup() }, 20)
         add(ui.button("Scan QR code") { scan() }, 10)
@@ -159,11 +219,93 @@ class MainActivity : Activity() {
             },
             16,
         )
+        add(trustLine(), 10)
+    }
+
+    /**
+     * Public numbers people can check on GitHub: downloads (counted by GitHub across all
+     * releases) and stars. There is no server, so the app cannot count users, and it does
+     * not pretend to. Small numbers are left out until they mean something.
+     */
+    private fun trustLine(): View {
+        val info = Hub.updateInfo
+        val parts = mutableListOf("Free and open source")
+        if (info != null && info.downloads >= SOCIAL_PROOF_MIN) parts += "%,d downloads".format(info.downloads)
+        if (info != null && info.stars >= SOCIAL_PROOF_MIN) parts += "★ ${info.stars} on GitHub"
+        parts += "Version ${BuildConfig.VERSION_NAME}"
+        return ui.caption(parts.joinToString(" · ")).apply {
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.25f)
+            setPadding(0, ui.dp(6), 0, ui.dp(6))
+            isClickable = true
+            setOnClickListener { openUrl(Updater.REPO_URL) }
+        }
+    }
+
+    /** Shown at the top when GitHub has a newer build than this one. */
+    private fun updateCard(): View? {
+        val info = Hub.updateInfo ?: return null
+        if (!info.isNewer) return null
+        val card = ui.card()
+        card.addView(ui.eyebrow("Update available", ui.brass))
+        card.addView(ui.cardTitle("ChargeWatch ${info.versionName}").apply { setPadding(0, ui.dp(4), 0, 0) })
+        if (info.notes.isNotBlank()) {
+            card.addView(ui.body(info.notes).apply {
+                setPadding(0, ui.dp(4), 0, 0)
+                maxLines = 3
+                ellipsize = TextUtils.TruncateAt.END
+            })
+        }
+        when (Hub.updatePhase) {
+            UpdatePhase.DOWNLOADING -> {
+                card.addView(
+                    BatteryBar(this, ui.track, ui.brass).apply {
+                        level = Hub.updateProgress.coerceAtLeast(1)
+                        fillColor = ui.brand
+                    },
+                    LinearLayout.LayoutParams(MATCH, ui.dp(14)).apply { topMargin = ui.dp(14) },
+                )
+                card.addView(ui.caption("Downloading… ${Hub.updateProgress}%").apply { setPadding(0, ui.dp(6), 0, 0) })
+            }
+            UpdatePhase.INSTALLING -> {
+                card.addView(ui.caption("Android's installer opens next. Tap Update there.").apply { setPadding(0, ui.dp(10), 0, 0) })
+                card.addView(ui.button("Try again", Ui.Style.GHOST) { startUpdate(info) },
+                    LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(6) })
+            }
+            else -> {
+                Hub.updateError?.let { card.addView(ui.caption(it, ui.amberText).apply { setPadding(0, ui.dp(10), 0, 0) }) }
+                card.addView(
+                    ui.button(if (Hub.updatePhase == UpdatePhase.FAILED) "Try again" else "Update now", Ui.Style.PRIMARY) {
+                        startUpdate(info)
+                    },
+                    LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(14) },
+                )
+                val size = if (info.size > 0) " %.1f MB.".format(info.size / 1_048_576.0) else ""
+                card.addView(ui.caption("Installs over this version. Your group and settings stay.$size").apply {
+                    gravity = Gravity.CENTER
+                    setPadding(0, ui.dp(8), 0, 0)
+                })
+            }
+        }
+        return card
     }
 
     private fun renderGroup(group: String) {
         add(header(group), 0)
+        updateCard()?.let { add(it, 18) }
         renderNotices()
+        if (!prefs.nameChosen) {
+            val card = ui.card()
+            card.addView(ui.eyebrow("Name this phone", ui.brass))
+            card.addView(
+                ui.body("Your other phones see it as \u201c${prefs.name}\u201d. Pick a name you will recognize.", ui.fg).apply {
+                    setPadding(0, ui.dp(4), 0, 0)
+                }
+            )
+            card.addView(ui.button("Set name", Ui.Style.PRIMARY) { editName() },
+                LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = ui.dp(12) })
+            add(card, 18)
+        }
 
         val now = System.currentTimeMillis() / 1000
         val others = Hub.others
@@ -209,6 +351,7 @@ class MainActivity : Activity() {
         })
         add(footer, 28)
         add(ui.button("Leave group", Ui.Style.GHOST) { confirmLeave() }, 12)
+        add(trustLine(), 4)
     }
 
     private fun renderNotices() {
@@ -302,6 +445,71 @@ class MainActivity : Activity() {
             }
         }
         return card
+    }
+
+    // ---- Updates ----
+
+    private fun checkForUpdate(manual: Boolean) {
+        val phase = Hub.updatePhase
+        if (phase == UpdatePhase.CHECKING || phase == UpdatePhase.DOWNLOADING) return
+        Hub.setUpdate(UpdatePhase.CHECKING)
+        prefs.lastUpdateCheck = System.currentTimeMillis()
+        Thread {
+            val info = runCatching { Updater.fetch() }.getOrNull()
+            main.post {
+                if (info != null) {
+                    prefs.cachedUpdate = Updater.toJson(info)
+                    Hub.setUpdate(UpdatePhase.IDLE, info = info)
+                    if (manual) toast(if (info.isNewer) "ChargeWatch ${info.versionName} is available." else "You have the latest version.")
+                } else {
+                    Hub.setUpdate(UpdatePhase.IDLE)
+                    if (manual) toast("Could not check for updates. Check your internet connection.")
+                }
+            }
+        }.start()
+    }
+
+    private fun startUpdate(info: UpdateInfo) {
+        if (Hub.updatePhase == UpdatePhase.DOWNLOADING) return
+        if (!packageManager.canRequestPackageInstalls()) {
+            Sheet(this, ui)
+                .title("Allow updates")
+                .text("Android asks once before an app can install its own updates. Turn on Allow from this source for ChargeWatch, then come back and tap Update now.")
+                .action("Open settings", Ui.Style.PRIMARY) {
+                    tryStart(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                }
+                .action("Not now", Ui.Style.GHOST)
+                .show()
+            return
+        }
+        Hub.setUpdate(UpdatePhase.DOWNLOADING, progress = 0)
+        val app = applicationContext
+        Thread {
+            try {
+                val file = Updater.download(app, info) { pct ->
+                    main.post { if (Hub.updatePhase == UpdatePhase.DOWNLOADING) Hub.setUpdate(UpdatePhase.DOWNLOADING, progress = pct) }
+                }
+                main.post { Hub.setUpdate(UpdatePhase.INSTALLING) }
+                Updater.install(app, file)
+            } catch (e: Exception) {
+                main.post { Hub.setUpdate(UpdatePhase.FAILED, error = e.message ?: "The update failed. Try again.") }
+            }
+        }.start()
+    }
+
+    private fun updateLabel(): String {
+        val info = Hub.updateInfo
+        return when {
+            Hub.updatePhase == UpdatePhase.CHECKING -> "Checking…"
+            info != null && info.isNewer -> "Version ${info.versionName} is available"
+            info != null -> "Version ${BuildConfig.VERSION_NAME} · Up to date"
+            else -> "Version ${BuildConfig.VERSION_NAME} · Tap to check"
+        }
+    }
+
+    private fun onUpdateRow() {
+        val info = Hub.updateInfo
+        if (info != null && info.isNewer) startUpdate(info) else checkForUpdate(manual = true)
     }
 
     // ---- Pairing ----
@@ -462,7 +670,8 @@ class MainActivity : Activity() {
             Triple("This phone's name", prefs.name, ::editName),
             Triple("Relay server", host(prefs.server), ::editServer),
             Triple("Background and battery", if (isUnrestricted()) "Unrestricted" else "Battery optimization is on", ::batteryHelp),
-            Triple("About", "Version ${BuildConfig.VERSION_NAME}", ::about),
+            Triple("App updates", updateLabel(), ::onUpdateRow),
+            Triple("About", "Open source on GitHub", ::about),
         )
         rows.forEachIndexed { i, (label, value, open) ->
             if (i > 0) list.addView(ui.divider())
@@ -521,13 +730,13 @@ class MainActivity : Activity() {
         }
         Sheet(this, ui)
             .title("This phone's name")
-            .text("Other phones show this name in their list and alerts.")
+            .text("Other phones show this name in their list and alerts. The system name is \u201c${prefs.defaultName()}\u201d.")
             .add(input)
             .action("Save", Ui.Style.PRIMARY) {
                 prefs.name = input.text.toString()
                 nameChanged()
             }
-            .action("Use device name", Ui.Style.GHOST) {
+            .action("Use system name", Ui.Style.GHOST) {
                 prefs.name = ""
                 nameChanged()
             }
@@ -536,6 +745,7 @@ class MainActivity : Activity() {
     }
 
     private fun nameChanged() {
+        prefs.nameChosen = true
         if (prefs.group != null) WatchService.start(this, reload = true)
         render()
     }
@@ -592,12 +802,21 @@ class MainActivity : Activity() {
             .title("ChargeWatch ${BuildConfig.VERSION_NAME}")
             .text(
                 "Get a notification on one phone when your other phone is charged.\n\n" +
-                    "Free and open source. Messages go through ntfy.sh, a free push relay. There is no account and no ChargeWatch server.\n\n" +
+                    "Free and open source. Messages go through ntfy.sh, a free push relay. There is no account and no ChargeWatch server, " +
+                    "so the app cannot count its users. GitHub counts downloads${statsText()}.\n\n" +
                     "Fonts: IBM Plex and Barlow, SIL Open Font License."
             )
             .action("Source code", Ui.Style.PRIMARY) { openUrl("https://github.com/Sowan3k/chargewatch") }
             .action("Close", Ui.Style.GHOST)
             .show()
+    }
+
+    private fun statsText(): String {
+        val info = Hub.updateInfo ?: return ""
+        val parts = mutableListOf<String>()
+        if (info.downloads > 0) parts += "%,d so far".format(info.downloads)
+        if (info.stars > 0) parts += "${info.stars} people starred the project"
+        return if (parts.isEmpty()) "" else ": " + parts.joinToString(", and ")
     }
 
     // ---- System settings ----
@@ -667,6 +886,9 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_NOTIFICATIONS = 1
+        private const val UPDATE_CHECK_MS = 6 * 60 * 60 * 1000L
+        /** Download and star counts below this stay hidden: a tiny number builds no trust. */
+        private const val SOCIAL_PROOF_MIN = 10
         private val THRESHOLDS = intArrayOf(0, 50, 60, 70, 75, 80, 85, 90, 95)
     }
 }

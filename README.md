@@ -27,16 +27,22 @@ Each alert fires once per charge. A phone that hovers at 99/100% or sits at an 8
 ## Install
 
 1. Open the download link above on each phone and open the APK. Android asks you to allow installs from your browser or file manager. Allow it once. If the download sits at 100% and never finishes, get [ChargeWatch.zip](https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.zip) instead, open it in your Files app and tap the APK inside.
-2. Open ChargeWatch and allow notifications.
-3. Tap **Allow** on the battery banner and pick **Allow** (this sets battery usage to Unrestricted). Without it, Android may pause the app in the background.
+2. Open ChargeWatch, give the phone a name (or tap **Use system name**) and allow notifications.
+3. Tap **Allow** on the battery banner and pick **Allow** (this sets battery usage to Unrestricted). Without it, Android may pause the app in the background. On Xiaomi phones, also turn on Autostart from Settings > Background and battery.
 
 The APK is signed with a public debug key that lives in this repo, so each new build installs over the old one. Only install ChargeWatch from this repository's releases.
+
+## Updates
+
+ChargeWatch updates itself. It checks this repository's `latest` release when you open it (and once a day in the background), shows an **Update available** card, downloads the new APK, checks its SHA-256 against the release, and hands it to Android's installer. You confirm the install, and your group and settings stay. Android only accepts the update if it carries the same signature as the installed app. The first time, Android asks you to let ChargeWatch install apps. Settings > App updates checks on demand.
+
+Releases only happen after the build passes its unit tests and the emulator test, so the in-app updater never offers an untested build.
 
 ## Pair your phones
 
 1. On one phone, tap **Create group**. It shows a QR code.
 2. On the other phone, tap **Scan QR code** and point the camera at it. The scanner comes from Google Play services, so the app needs no camera permission. If the scanner is not available, tap **Enter code** and type the code shown under the QR.
-3. Both phones now appear on each other's screen. Add a third phone the same way with **Show QR code**.
+3. Both phones now appear on each other's screen. Add a third phone the same way with **Add a phone**.
 
 To unpair, tap **Leave group**. The other phones remove this one from their list. Long press a phone that no longer exists to remove it by hand.
 
@@ -67,6 +73,8 @@ Every phone also keeps a streaming connection to the same topic (`/json?since=12
 To stay well under the public relay's limits, a phone sends every 1% change while charging above 50%, every 5% otherwise, and a heartbeat every 30 minutes when nothing changes. The heartbeat is what lets the list say "Last seen 3 h ago" for a phone that has gone quiet. A normal day is roughly 100 to 120 messages per phone.
 
 ## Privacy
+
+ChargeWatch has no server, so it cannot count its users, and it does not try. The app shows two public numbers anyone can check on GitHub instead: total downloads from the releases and the repository's stars. A scheduled workflow (`.github/workflows/stats.yml`) copies them into the release's `version.json` every six hours. They stay hidden in the app until they pass 10.
 
 There is no ChargeWatch server and no account. The messages carry only a random id, the phone name, the battery level and the charging state. Anyone who has your group's QR code or code can read them, and so can the relay operator. If that matters to you, run your own relay.
 

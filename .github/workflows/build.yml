@@ -73,24 +73,6 @@ jobs:
             ChargeWatch.zip
           if-no-files-found: error
 
-      - name: Publish to the "latest" release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Move the "latest" tag to this commit, then replace the APK on its release.
-          git tag -f latest
-          git push -f origin refs/tags/latest
-          notes="Automatic build of $(git rev-parse --short HEAD) from main ($(date -u '+%Y-%m-%d %H:%M UTC')).
-
-          Download **ChargeWatch.apk** below and open it on your phone to install. If your browser gets stuck at 100%, download **ChargeWatch.zip** instead, open it in your Files app and tap the APK inside. See the README for setup steps."
-          if gh release view latest > /dev/null 2>&1; then
-            gh release edit latest --title "ChargeWatch (latest build)" --notes "$notes" --latest
-          else
-            gh release create latest --title "ChargeWatch (latest build)" --notes "$notes" --latest
-          fi
-          gh release upload latest ChargeWatch.apk ChargeWatch.zip --clobber
-
   emulator-test:
     name: Install and run on Android 14
     needs: build
@@ -136,10 +118,49 @@ jobs:
           path: emulator-*.png
           if-no-files-found: ignore
 
-      - name: Attach screenshots to the "latest" release
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
+  release:
+    name: Publish to the "latest" release
+    # Only builds that passed the emulator test reach users, including through in-app updates.
+    needs: [build, emulator-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Download the APK
+        uses: actions/download-artifact@v5
+        with:
+          name: ChargeWatch-apk
+
+      - name: Download the screenshots
+        uses: actions/download-artifact@v5
+        with:
+          name: emulator-screenshots
+
+      - name: Publish
         run: |
+          # Fold the current files' download counts into the running total before replacing them.
+          baseline=$(python3 .github/scripts/release_info.py baseline)
+          echo "Downloads so far: $baseline"
+          git tag -f latest
+          git push -f origin refs/tags/latest
+          notes="Automatic build of $(git rev-parse --short HEAD) from main ($(date -u '+%Y-%m-%d %H:%M UTC')). Tested on an Android 14 emulator before release.
+
+          Download **ChargeWatch.apk** below and open it on your phone to install. If your browser gets stuck at 100%, download **ChargeWatch.zip** instead, open it in your Files app and tap the APK inside. Installed copies update themselves from inside the app."
+          if gh release view latest > /dev/null 2>&1; then
+            gh release edit latest --title "ChargeWatch (latest build)" --notes "$notes" --latest
+          else
+            gh release create latest --title "ChargeWatch (latest build)" --notes "$notes" --latest
+          fi
           for f in emulator-*.png; do cp "$f" "screenshot-${f#emulator-}"; done
-          gh release upload latest screenshot-*.png --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload latest ChargeWatch.apk ChargeWatch.zip screenshot-*.png --clobber
+          # version.json goes last, so it never points at an APK that is not uploaded yet.
+          python3 .github/scripts/release_info.py write ChargeWatch.apk "$baseline"
+          gh release upload latest version.json --clobber

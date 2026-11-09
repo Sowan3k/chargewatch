@@ -1,0 +1,28 @@
+name: Refresh download stats
+
+# Keeps the download and star counts in version.json fresh between releases.
+# The app shows them as public, checkable numbers.
+on:
+  schedule:
+    - cron: "41 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Refresh version.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release_info.py refresh

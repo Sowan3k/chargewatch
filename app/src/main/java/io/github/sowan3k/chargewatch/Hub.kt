@@ -22,6 +22,16 @@ object Hub {
     var connected: Boolean = false
         private set
 
+    /** The newest release we know about, from version.json (cached across restarts). */
+    var updateInfo: UpdateInfo? = null
+        private set
+    var updatePhase: UpdatePhase = UpdatePhase.IDLE
+        private set
+    var updateProgress: Int = 0
+        private set
+    var updateError: String? = null
+        private set
+
     private val listeners = LinkedHashSet<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
     private var posted = false
@@ -40,6 +50,19 @@ object Hub {
         if (text == status && isConnected == connected) return
         status = text
         connected = isConnected
+        changed()
+    }
+
+    fun setUpdate(
+        phase: UpdatePhase = updatePhase,
+        progress: Int = updateProgress,
+        error: String? = null,
+        info: UpdateInfo? = updateInfo,
+    ) {
+        updatePhase = phase
+        updateProgress = progress
+        updateError = error
+        updateInfo = info
         changed()
     }
 

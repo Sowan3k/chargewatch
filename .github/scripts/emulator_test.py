@@ -4,7 +4,7 @@
 It installs the release APK, drives the UI with adb, and plays the "other phone"
 by talking to ntfy.sh directly:
 
-  1. install the APK and open the app
+  1. install the APK, open the app and name the phone in onboarding
   2. create a group and read the group code from the QR dialog
   3. check that the phone publishes its battery level, and again after plugging in
   4. post fake reports from a second phone and check both alerts appear
@@ -127,6 +127,15 @@ def ntfy_publish(topic, body):
         r.read()
 
 
+def release_has_version_file():
+    url = "https://github.com/Sowan3k/chargewatch/releases/download/latest/version.json"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def notifications():
     return sh("dumpsys notification --noredact")
 
@@ -147,7 +156,14 @@ def main():
     for cmd in ("set ac 0", "set usb 0", "set wireless 0", "set level 60"):
         sh(f"dumpsys battery {cmd}")
     sh(f"am start -W -n {PKG}/.MainActivity")
-    check(wait(lambda: "Pair your phones" in screen_text(), 40), "app opens on the pairing screen")
+
+    # Onboarding: name the phone (here with the system name), then the pairing step
+    check(wait(lambda: "Name this phone" in screen_text(), 40), "onboarding asks for the phone's name")
+    screenshot("0-name")
+    tap("Use system name")
+    time.sleep(1)
+    tap("Continue")
+    check(wait(lambda: "Pair your phones" in screen_text(), 20), "onboarding moves on to pairing")
     screenshot("1-pairing")
 
     # 2. Create a group
@@ -186,6 +202,11 @@ def main():
         ntfy_publish(topic, {**other, "level": level, "charging": True})
         time.sleep(2)
     check(wait(lambda: "Test Phone is fully charged" in notifications(), 30), "alert shows: Test Phone is fully charged")
+    sh("cmd statusbar expand-notifications")
+    time.sleep(3)
+    screenshot("6-alerts")
+    sh("cmd statusbar collapse")
+    time.sleep(1)
 
     # 5. Restart: the backlog replays, but no alert may fire again
     sh(f"am force-stop {PKG}")
@@ -202,6 +223,13 @@ def main():
     # Settings sheet, then the same screen in dark mode
     if tap_desc("Settings"):
         check(wait(lambda: "Alert level" in screen_text(), 10), "settings sheet opens")
+        if release_has_version_file():
+            check(
+                wait(lambda: any("Up to date" in t for t in screen_text()), 20),
+                "in-app update check reads the release (this build is newer)",
+            )
+        else:
+            print("SKIP  update check: the release has no version.json yet")
         time.sleep(1)
         screenshot("4-settings")
         sh("input keyevent KEYCODE_BACK")

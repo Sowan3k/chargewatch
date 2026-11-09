@@ -60,6 +60,7 @@ class WatchService : Service() {
     private val heartbeat = AlarmManager.OnAlarmListener {
         refreshBattery()
         publishNow()
+        maybeCheckUpdate()
     }
 
     private val saveRunnable = Runnable {
@@ -148,6 +149,33 @@ class WatchService : Service() {
             onState = { st -> main.post { onSubscriberState(st, g) } },
         ).also { it.start() }
         if (level >= 0) publishNow()
+        maybeCheckUpdate()
+    }
+
+    /** Once a day, look for a new release and post a notification about it (once per version). */
+    private fun maybeCheckUpdate() {
+        val now = System.currentTimeMillis()
+        if (now - prefs.lastUpdateCheck < UPDATE_CHECK_MS) return
+        prefs.lastUpdateCheck = now
+        Thread {
+            val info = runCatching { Updater.fetch() }.getOrNull() ?: return@Thread
+            main.post {
+                prefs.cachedUpdate = Updater.toJson(info)
+                Hub.setUpdate(info = info)
+                if (info.isNewer && prefs.notifiedVersion < info.versionCode) {
+                    prefs.notifiedVersion = info.versionCode
+                    val n = Notification.Builder(this, CHANNEL_UPDATES)
+                        .setSmallIcon(R.drawable.ic_notify)
+                        .setColor(BRAND)
+                        .setContentTitle("ChargeWatch ${info.versionName} is available")
+                        .setContentText("Tap to update. Your group and settings stay.")
+                        .setAutoCancel(true)
+                        .setContentIntent(openApp(this))
+                        .build()
+                    getSystemService(NotificationManager::class.java)?.notify(NOTIF_UPDATE, n)
+                }
+            }
+        }.start()
     }
 
     private fun startOnce() {
@@ -403,7 +431,10 @@ class WatchService : Service() {
         private const val EXTRA_ID = "id"
         const val CHANNEL_ALERTS = "alerts"
         const val CHANNEL_STATUS = "status"
+        const val CHANNEL_UPDATES = "updates"
         private const val NOTIF_STATUS = 1
+        private const val NOTIF_UPDATE = 2
+        private const val UPDATE_CHECK_MS = 24 * 60 * 60 * 1000L
         private const val ALERT_BASE = 1000
         private const val BRAND = 0xFF0D7A56.toInt()
 
@@ -436,6 +467,11 @@ class WatchService : Service() {
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_ALERTS, "Charge alerts", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "When another phone reaches your alert level or is fully charged"
+                }
+            )
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_UPDATES, "App updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "When a new version of ChargeWatch is ready to install"
                 }
             )
             nm.createNotificationChannel(

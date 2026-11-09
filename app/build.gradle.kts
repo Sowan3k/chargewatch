@@ -83,4 +83,6 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     testImplementation("junit:junit:4.13.2")
+    // The real org.json, so unit tests can parse JSON (android.jar only has stubs).
+    testImplementation("org.json:json:20240303")
 }
