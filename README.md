@@ -17,7 +17,7 @@ Each alert fires once per charge. A phone that hovers at 99/100% or sits at an 8
 
 ## Install
 
-1. Open the download link above on each phone and open the APK. Android asks you to allow installs from your browser or file manager. Allow it once.
+1. Open the download link above on each phone and open the APK. Android asks you to allow installs from your browser or file manager. Allow it once. If the download sits at 100% and never finishes, get [ChargeWatch.zip](https://github.com/Sowan3k/chargewatch/releases/download/latest/ChargeWatch.zip) instead, open it in your Files app and tap the APK inside.
 2. Open ChargeWatch and allow notifications.
 3. Tap **Allow** on the battery banner and pick **Allow** (this sets battery usage to Unrestricted). Without it, Android may pause the app in the background.
 

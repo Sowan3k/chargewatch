@@ -29,6 +29,11 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+            // Sign with every scheme. v1 (JAR) costs a few KB and keeps older or
+            // vendor installers and security scanners happy.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 

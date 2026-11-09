@@ -58,12 +58,19 @@ jobs:
             echo "::error::ChargeWatch.apk is $mb MB, over the 5 MB limit"
             exit 1
           fi
+          # Fail the build if the signature does not verify, and show the schemes in the log.
+          "$tools/apksigner" verify --verbose --min-sdk-version 26 ChargeWatch.apk | grep -E "^Verifie|^Number of signers|WARNING|ERROR" || true
+          "$tools/apksigner" verify --min-sdk-version 26 ChargeWatch.apk
+          # Some browsers and phone security apps hold back .apk downloads. A zip is a fallback.
+          zip -j -9 ChargeWatch.zip ChargeWatch.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v5
         with:
           name: ChargeWatch-apk
-          path: ChargeWatch.apk
+          path: |
+            ChargeWatch.apk
+            ChargeWatch.zip
           if-no-files-found: error
 
       - name: Publish to the "latest" release
@@ -76,10 +83,10 @@ jobs:
           git push -f origin refs/tags/latest
           notes="Automatic build of $(git rev-parse --short HEAD) from main ($(date -u '+%Y-%m-%d %H:%M UTC')).
 
-          Download **ChargeWatch.apk** below and open it on your phone to install. See the README for setup steps."
+          Download **ChargeWatch.apk** below and open it on your phone to install. If your browser gets stuck at 100%, download **ChargeWatch.zip** instead, open it in your Files app and tap the APK inside. See the README for setup steps."
           if gh release view latest > /dev/null 2>&1; then
             gh release edit latest --title "ChargeWatch (latest build)" --notes "$notes" --latest
           else
             gh release create latest --title "ChargeWatch (latest build)" --notes "$notes" --latest
           fi
-          gh release upload latest ChargeWatch.apk --clobber
+          gh release upload latest ChargeWatch.apk ChargeWatch.zip --clobber
