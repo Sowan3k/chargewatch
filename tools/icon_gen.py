@@ -25,6 +25,17 @@ C = "M42.35,48.06 A6.8,8 0 1 0 42.35,59.94"
 W = "M50.35,46 L55.1,62 L60.35,51.5 L65.6,62 L70.35,46"
 LETTERS = C + " " + W
 
+# The body is drawn around x=51. These transforms center the body (not the body plus its
+# terminal) on the icon's middle, and leave margin for masks and for launchers such as
+# HyperOS that draw themed icons larger than stock Android.
+BODY_CX, BODY_CY = BX + BW / 2, BY + BH / 2
+# HyperOS themes icons by turning the full-color foreground gray and placing it in a circle
+# about 60 units wide, so everything (terminal and shadows included) stays within ~26 of the
+# center at these scales.
+FG_SCALE = 0.8
+MONO_SCALE = 0.78
+SHIFT_X = 54 - BODY_CX
+
 CHROME = [(0, "#FFFFFFFF"), (0.35, "#FFAEB7C6"), (0.55, "#FFF2F5FA"), (0.8, "#FF7E889A"), (1, "#FFD9DFE8")]
 GLASS = [(0, "#FFFFFFFF"), (0.45, "#FFE3DCFA"), (1, "#FFB8C6EE")]
 FILL = [(0, "#26FFFFFF"), (1, "#0AFFFFFF")]
@@ -42,6 +53,11 @@ def stroke_svg(d, width, color, extra=""):
     return f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{width}" stroke-linecap="round" stroke-linejoin="round" {extra}/>'
 
 def fg_svg():
+    return (f'<g transform="translate({SHIFT_X},0) translate({BODY_CX},{BODY_CY}) scale({FG_SCALE}) '
+            f'translate({-BODY_CX},{-BODY_CY})">{fg_svg_raw()}</g>')
+
+
+def fg_svg_raw():
     defs = (svg_grad("chromeB", BY, BY + BH, CHROME) + svg_grad("chromeL", 43.5, 64.5, CHROME) +
             svg_grad("glass", 45, 63, GLASS) + svg_grad("fill", BY, BY + BH, FILL))
     parts = [f"<defs>{defs}</defs>",
@@ -66,28 +82,44 @@ def bg_svg():
             '<rect width="108" height="108" fill="url(#bg)"/><rect width="108" height="108" fill="url(#shine)"/>')
 
 def mono_svg(color="#FFFFFF"):
-    return (stroke_svg(BODY, 3.4, color) + f'<path d="{NUB}" fill="{color}"/>' + stroke_svg(LETTERS, 5.0, color))
+    inner = stroke_svg(BODY, 3.4, color) + f'<path d="{NUB}" fill="{color}"/>' + stroke_svg(LETTERS, 5.0, color)
+    return (f'<g transform="translate({SHIFT_X},0) translate({BODY_CX},{BODY_CY}) scale({MONO_SCALE}) '
+            f'translate({-BODY_CX},{-BODY_CY})">{inner}</g>')
 
-def preview(size, mask):
+def preview(size, mask, guide=False):
     # Visible area of an adaptive icon is the middle 72 of 108.
     clip = {"squircle": '<rect x="18" y="18" width="72" height="72" rx="22"/>',
             "circle": '<circle cx="54" cy="54" r="36"/>'}[mask]
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="18 18 72 72">'
             f'<defs><clipPath id="m">{clip}</clipPath></defs><g clip-path="url(#m)">{bg_svg()}{fg_svg()}</g></svg>')
 
-def themed_preview(size):
-    # Roughly how HyperOS/Android 13 themed icons draw the monochrome layer.
+def hyperos_preview(size):
+    # HyperOS: the full-color foreground, made gray, in a light circle of radius ~30.
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="18 18 72 72">'
+            f'<defs><clipPath id="c"><circle cx="54" cy="54" r="30"/></clipPath></defs>'
             f'<rect x="18" y="18" width="72" height="72" rx="22" fill="#3A3A3C"/>'
-            f'<circle cx="54" cy="54" r="27" fill="#BDBDBD"/>'
-            f'<g transform="translate(54 54) scale(0.72) translate(-54 -54)">{mono_svg("#2C2C2E")}</g></svg>')
+            f'<circle cx="54" cy="54" r="30" fill="#BDBDBD"/>'
+            f'<g clip-path="url(#c)">{fg_svg()}</g>'
+            f'<line x1="54" y1="22" x2="54" y2="86" stroke="#ff3b30" stroke-width="0.3" stroke-opacity="0.6"/></svg>')
+
+
+def themed_preview(size, zoom=1.0):
+    # Themed icons: the monochrome layer in a circle. HyperOS draws it larger (zoom ~1.35),
+    # so the drawing must still fit the circle at that zoom.
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="18 18 72 72">'
+            f'<defs><clipPath id="c"><circle cx="54" cy="54" r="30"/></clipPath></defs>'
+            f'<rect x="18" y="18" width="72" height="72" rx="22" fill="#3A3A3C"/>'
+            f'<circle cx="54" cy="54" r="30" fill="#BDBDBD"/>'
+            f'<g clip-path="url(#c)"><g transform="translate(54 54) scale({zoom}) translate(-54 -54)">{mono_svg("#2C2C2E")}</g></g>'
+            f'<line x1="54" y1="22" x2="54" y2="86" stroke="#ff3b30" stroke-width="0.3" stroke-opacity="0.6"/></svg>')
 
 if OUT_PREV:
     import cairosvg
 
     os.makedirs(OUT_PREV, exist_ok=True)
     for name, svg in [("squircle", preview(512, "squircle")), ("circle", preview(512, "circle")),
-                      ("small", preview(144, "squircle")), ("themed", themed_preview(512))]:
+                      ("small", preview(144, "squircle")), ("themed", themed_preview(512)),
+                      ("hyperos", hyperos_preview(512))]:
         cairosvg.svg2png(bytestring=svg.encode(), write_to=f"{OUT_PREV}/{name}.png")
 
 # ---------- Android vector drawables ----------
@@ -113,10 +145,17 @@ def vfill(d, color=None, grad=None):
 def group(dx, dy, body):
     return f'    <group android:translateX="{dx}" android:translateY="{dy}">\n' + body.replace("\n    ", "\n        ").replace("    <path", "        <path", 1) + "    </group>\n"
 
+def outer_open(scale):
+    # VectorDrawable groups scale around the pivot first, then translate.
+    return (f'    <group android:pivotX="{BODY_CX}" android:pivotY="{BODY_CY}" android:scaleX="{scale}" '
+            f'android:scaleY="{scale}" android:translateX="{SHIFT_X}">\n')
+
+
 fg = (f'<?xml version="1.0" encoding="utf-8"?>\n'
       f'<!-- Generated by tools/icon_gen.py: a chrome battery holding glassy 3D "CW" letters. -->\n'
       f'<vector xmlns:android="http://schemas.android.com/apk/res/android"\n    {AAPT}\n'
       f'    android:width="108dp"\n    android:height="108dp"\n    android:viewportWidth="108"\n    android:viewportHeight="108">\n'
+      + outer_open(FG_SCALE)
       + group(0.8, 1.3, vstroke(BODY, 3.4, "#59000000"))
       + vfill(BODY, grad=vgrad("fillColor", BY, BY + BH, FILL))
       + vstroke(BODY, 3.4, grad=vgrad("strokeColor", BY, BY + BH, CHROME))
@@ -128,13 +167,14 @@ fg = (f'<?xml version="1.0" encoding="utf-8"?>\n'
       + vstroke(LETTERS, 5.0, grad=vgrad("strokeColor", 43.5, 64.5, CHROME))
       + vstroke(LETTERS, 3.0, grad=vgrad("strokeColor", 45, 63, GLASS))
       + group(-0.4, -0.5, vstroke(LETTERS, 0.8, "#D9FFFFFF"))
-      + "</vector>\n")
+      + "    </group>\n</vector>\n")
 mono = (f'<?xml version="1.0" encoding="utf-8"?>\n'
         f'<!-- Monochrome launcher layer (themed icons): the battery outline with "CW" inside. -->\n'
         f'<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
         f'    android:width="108dp"\n    android:height="108dp"\n    android:viewportWidth="108"\n    android:viewportHeight="108">\n'
+        + outer_open(MONO_SCALE)
         + vstroke(BODY, 3.4, "#FFFFFFFF") + vfill(NUB, "#FFFFFFFF") + vstroke(LETTERS, 5.0, "#FFFFFFFF")
-        + "</vector>\n")
+        + "    </group>\n</vector>\n")
 open(f"{OUT_RES}/drawable/ic_launcher_foreground.xml", "w").write(fg)
 open(f"{OUT_RES}/drawable/ic_launcher_monochrome.xml", "w").write(mono)
 print("ok")

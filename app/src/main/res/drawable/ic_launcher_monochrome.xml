@@ -5,6 +5,7 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <group android:pivotX="51.0" android:pivotY="54.0" android:scaleX="0.78" android:scaleY="0.78" android:translateX="3.0">
     <path
         android:pathData="M31.50,37.50 H70.50 A7.5,7.5 0 0 1 78.00,45.00 V63.00 A7.5,7.5 0 0 1 70.50,70.50 H31.50 A7.5,7.5 0 0 1 24.00,63.00 V45.00 A7.5,7.5 0 0 1 31.50,37.50 Z"
         android:fillColor="#00000000"
@@ -22,4 +23,5 @@
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeColor="#FFFFFFFF" />
+    </group>
 </vector>
