@@ -62,9 +62,17 @@ Releases only happen after the build passes its unit tests and the emulator test
 
 To unpair, tap **Leave group**. The other phones remove this one from their list. Long press a phone that no longer exists to remove it by hand.
 
+## Look and feel
+
+The screen sits on a moving background: soft glows that drift, and wide arcs that flow outward, each catching a streak of light. The light follows your finger. Screens rise in, battery numbers count to their value, a charging bar carries a running light, and live status dots pulse. Everything you can tap sinks under the finger, shows a ripple and gives a light haptic tick. Cards are glass, so a little of the motion shows through.
+
+The sun or moon at the top switches between light and dark with a circular wipe. Settings > Appearance offers System, Light and Dark.
+
+All of it is drawn with plain Canvas in the app's own colours, with no animation library. It only runs while the screen is open and in front, at about 30 frames a second, and it stops when Battery Saver is on or when the system has animations turned off.
+
 ## Settings
 
-The alert level can be Off, 50, 60, 70, 75, 80, 85, 90 or 95%. Each phone sets its own. Status notification chooses between showing the notification only while a phone is charging (the default) and always. You can also rename the phone (the default is the name set in Settings > About phone, or the model) and choose a relay server.
+The alert level can be Off, 50, 60, 70, 75, 80, 85, 90 or 95%. Each phone sets its own. Appearance picks light, dark or the system setting. Status notification chooses between showing the notification only while a phone is charging (the default) and always. You can also rename the phone (the default is the name set in Settings > About phone, or the model) and choose a relay server.
 
 ## Battery use and the notification
 
@@ -78,7 +86,7 @@ If you prefer the notification all the time, Settings > Status notification > Al
 
 Going live from a background check needs battery use set to Unrestricted. Without it, the checks still deliver alerts and send the level, just less often.
 
-Other details: battery changes are only sent in 1% steps while charging above 50% (5% steps otherwise). Heartbeats go out every 30 minutes on power and every 60 minutes on battery, and each report says which, so other phones know when to call it offline. All network work runs on one thread under a short wakelock. With no network, the app waits for the connection to come back instead of retrying on a timer. The notification is only updated when its text changes.
+Other details: battery changes are only sent in 1% steps while charging above 50% (5% steps otherwise). Heartbeats go out every 30 minutes on power and every 60 minutes on battery, and each report says which, so other phones know when to call it offline. All network work runs on one thread under a short wakelock. With no network, the app waits for the connection to come back instead of retrying on a timer. The notification is only updated when its text changes. The animated background costs nothing in the background: it only draws while the app is open and in front, and not at all in Battery Saver.
 
 ## Keeping it running in the background
 
@@ -123,7 +131,7 @@ You need JDK 17 and the Android SDK (platform 34).
 # APK: app/build/outputs/apk/release/app-release.apk
 ```
 
-The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a warm claret theme (off-white paper, claret actions, amber for charging, with a warm stone dark mode), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), cards, status pills and bottom sheets. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
+The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a warm claret theme (off-white paper, claret actions, amber for charging, with a warm stone dark mode), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), glass cards, status pills and bottom sheets. `Motion.kt` holds the animated background and the touch and transition effects. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
 
 Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest). A second job installs that APK on an Android 14 emulator and drives it end to end (`.github/scripts/emulator_test.py`): it creates a group, checks that battery changes reach ntfy.sh, plays a second phone to trigger both alerts, restarts the app to make sure alerts do not repeat, and leaves the group.
 

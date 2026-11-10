@@ -119,6 +119,10 @@ def tap_desc(description, timeout=20):
     return True
 
 
+def has_desc(description):
+    return any(n.get("content-desc") == description for n in ui_nodes())
+
+
 def screenshot(name):
     with open(f"emulator-{name}.png", "wb") as f:
         f.write(run(["adb", "exec-out", "screencap", "-p"], binary=True))
@@ -262,6 +266,7 @@ def main():
     # Settings sheet, then the same screen in dark mode
     if tap_desc("Settings"):
         check(wait(lambda: "Alert level" in screen_text(), 10), "settings sheet opens")
+        check("Appearance" in screen_text(), "settings offer Appearance (system, light, dark)")
         if release_has_version_file():
             check(
                 wait(lambda: any("Up to date" in t for t in screen_text()), 20),
@@ -273,12 +278,38 @@ def main():
         screenshot("4-settings")
         sh("input keyevent KEYCODE_BACK")
         time.sleep(1)
+    # Dark mode two ways: following the system, then with the switch in the header.
     sh("cmd uimode night yes")
-    time.sleep(4)
-    check(wait(lambda: "Test Phone" in screen_text(), 15), "dark mode renders the main screen")
-    screenshot("5-main-dark")
+    check(wait(lambda: has_desc("Switch to light mode"), 25), "dark mode follows the system setting")
     sh("cmd uimode night no")
-    time.sleep(4)
+    check(wait(lambda: has_desc("Switch to dark mode"), 25), "and returns to light with it")
+    if tap_desc("Switch to dark mode"):
+        check(wait(lambda: has_desc("Switch to light mode"), 15), "the switch in the header turns dark mode on")
+        check("Test Phone" in screen_text(), "dark mode renders the main screen")
+        time.sleep(1)
+        screenshot("5-main-dark")
+        tap_desc("Switch to light mode")
+        check(wait(lambda: has_desc("Switch to dark mode"), 15), "and turns it off again")
+
+    # Motion. The rest of the test runs with system animations off, which the app respects by
+    # drawing still frames. Turn them on for a moment: the screen must move, and not crash.
+    sh("settings put global animator_duration_scale 1")
+    sh(f"am force-stop {PKG}")
+    time.sleep(1)
+    sh(f"am start -W -n {PKG}/.MainActivity")
+    time.sleep(6)
+    frame_a = run(["adb", "exec-out", "screencap", "-p"], binary=True)
+    time.sleep(1.5)
+    frame_b = run(["adb", "exec-out", "screencap", "-p"], binary=True)
+    check(len(frame_a) > 10_000 and frame_a != frame_b, "with animations on, the background is moving")
+    check(PKG not in run(["adb", "logcat", "-b", "crash", "-d"]), "and nothing crashes while it moves")
+    with open("emulator-9-motion.png", "wb") as f:
+        f.write(frame_b)
+    sh("settings put global animator_duration_scale 0")
+    sh(f"am force-stop {PKG}")
+    time.sleep(1)
+    sh(f"am start -W -n {PKG}/.MainActivity")
+    check(wait(lambda: any(t.startswith("Connected to") for t in screen_text()), 40), "with animations off again, the screen holds still and reconnects")
 
     # 6. Nothing charging and the app closed: the service stops, with no notification and
     #    no connection. The background job checks about every 15 minutes (forced here).

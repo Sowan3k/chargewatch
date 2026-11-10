@@ -93,6 +93,11 @@ class Prefs(context: Context) {
         sp.edit().putString(KEY_DEVICES, arr.toString()).apply()
     }
 
+    /** Appearance: follow the system, or always light, or always dark. */
+    var themeMode: Int
+        get() = sp.getInt(KEY_THEME, THEME_SYSTEM)
+        set(v) = sp.edit().putInt(KEY_THEME, v).apply()
+
     /** Keep the service and its notification on all the time, even while nothing charges. */
     var alwaysOn: Boolean
         get() = sp.getBoolean(KEY_ALWAYS_ON, false)
@@ -157,6 +162,10 @@ class Prefs(context: Context) {
         private const val KEY_UPDATE_NOTIFIED = "update_notified"
         private const val KEY_LAST_MSG = "last_msg_id"
         private const val KEY_ALWAYS_ON = "always_on"
+        private const val KEY_THEME = "theme"
+        const val THEME_SYSTEM = 0
+        const val THEME_LIGHT = 1
+        const val THEME_DARK = 2
         private const val KEY_SENT_LEVEL = "sent_level"
         private const val KEY_SENT_CHARGING = "sent_charging"
         private const val KEY_SENT_AT = "sent_at"

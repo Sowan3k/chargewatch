@@ -4,13 +4,11 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.res.ColorStateList
-import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorFilter
+import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.PixelFormat
-import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -19,6 +17,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
+import android.os.SystemClock
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -44,16 +43,21 @@ import android.widget.TextView
  *
  * Type: Barlow Semi Condensed for titles and figures, IBM Plex Sans for text, IBM Plex Mono
  * for codes. Fine states are quiet (a neutral pill with a small dot).
+ *
+ * Surfaces are glass: cards let a little of the moving background through. Everything you can
+ * tap answers the finger: it sinks slightly, shows a ripple and gives a light haptic tick.
+ *
+ * [dark] picks the palette (the screen decides: the system setting, or the user's choice).
+ * [motion] is false when animations are off or Battery Saver is on.
  */
-class Ui(val context: Context) {
-    val dark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-        Configuration.UI_MODE_NIGHT_YES
+class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
 
     // ---- Colour tokens (light / dark) ----
     val bg = if (dark) 0xFF1C1917.toInt() else 0xFFFAF7F5.toInt()            // background
     val fg = if (dark) 0xFFF5F5F4.toInt() else 0xFF1A1A1A.toInt()            // foreground
     val muted = if (dark) 0xFFD6D3D1.toInt() else 0xFF57534E.toInt()         // muted-foreground
-    val surface = if (dark) 0xFF292524.toInt() else 0xFFFAF7F5.toInt()       // card
+    /** Cards: the card colour as glass, so the background shows through a little. */
+    val surface = if (dark) 0xC7292524.toInt() else 0xBDFFFFFF.toInt()       // card
     val border = if (dark) 0xFF44403C.toInt() else 0xFFF5E8D2.toInt()        // border
     val hairline = border
     val primary = if (dark) 0xFFB91C1C.toInt() else 0xFF9B2C2C.toInt()       // primary
@@ -67,7 +71,7 @@ class Ui(val context: Context) {
     val brand = if (dark) 0xFFFBBF24.toInt() else 0xFFB45309.toInt()
     /** Labels and small accents: golden brown in light, amber in dark. */
     val brass = if (dark) 0xFFF59E0B.toInt() else 0xFF805500.toInt()
-    val sheet = surface                                                     // popover
+    val sheet = if (dark) 0xFF292524.toInt() else 0xFFFAF7F5.toInt()         // popover
     val quiet = if (dark) 0xFF1F1C1A.toInt() else 0xFFF0EBE8.toInt()         // muted
     val dotOk = brand
     val dotIdle = if (dark) 0x66F5F5F4 else 0x401A1A1A
@@ -156,15 +160,25 @@ class Ui(val context: Context) {
         if (strokeColor != 0) setStroke(dp(strokeDp), strokeColor)
     }
 
-    /** The standard card: the card colour, a border, 16 dp corners and a soft red-tinted shadow. */
-    fun card() = column().apply {
+    /** The standard card: glass, a border and 16 dp corners. A [tappable] card answers the finger. */
+    fun card(tappable: Boolean = false) = column().apply {
         setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = rounded(surface, 16, border)
-        elevation = dpf(if (dark) 1f else 3f)
-        if (Build.VERSION.SDK_INT >= 28) {
-            outlineSpotShadowColor = shadow
-            outlineAmbientShadowColor = shadow
+        val shape = rounded(surface, 16, border)
+        if (tappable) {
+            background = ripple(shape, 16)
+            isClickable = true
+            isFocusable = true
+            Motion.pressable(this, 0.985f)
+        } else {
+            background = shape
         }
+    }
+
+    /** Gives a plain row a ripple, for lists of things to tap. */
+    fun tappable(view: View, radiusDp: Int = 10) {
+        view.background = ripple(null, radiusDp)
+        view.isClickable = true
+        view.isFocusable = true
     }
 
     /** Empty states: a dashed outline. */
@@ -193,7 +207,11 @@ class Ui(val context: Context) {
                 background = ripple(rounded(primary, 10), 10)
                 isClickable = true
                 isFocusable = true
-                setOnClickListener { onClick() }
+                Motion.pressable(this)
+                setOnClickListener {
+                    Motion.tick(it)
+                    onClick()
+                }
             },
             LinearLayout.LayoutParams(WRAP, WRAP),
         )
@@ -220,8 +238,9 @@ class Ui(val context: Context) {
 
     /**
      * Buttons are plain TextViews with a shape and a ripple, so no platform button
-     * style (caps, insets, elevation) gets in the way. The main action is claret (primary),
-     * secondary actions are warm cream (secondary).
+     * style (caps, insets, elevation) gets in the way. The main action is claret (primary)
+     * with a soft glow of its own colour under it, secondary actions are warm cream (secondary).
+     * Every button sinks under the finger, springs back and gives a light haptic tick.
      */
     fun button(label: String, style: Style = Style.SECONDARY, onClick: () -> Unit) = text(label, 15f, fg, sansMedium).apply {
         gravity = Gravity.CENTER
@@ -233,6 +252,11 @@ class Ui(val context: Context) {
             Style.PRIMARY -> {
                 setTextColor(onPrimary)
                 background = ripple(rounded(primary, 12), 12)
+                if (Build.VERSION.SDK_INT >= 28) {
+                    elevation = dpf(if (dark) 3f else 5f)
+                    outlineSpotShadowColor = primary
+                    outlineAmbientShadowColor = shadow
+                }
             }
             Style.SECONDARY -> {
                 setTextColor(onSecondary)
@@ -247,34 +271,39 @@ class Ui(val context: Context) {
                 background = ripple(rounded(redBg, 12), 12)
             }
         }
-        setOnClickListener { onClick() }
+        Motion.pressable(this)
+        setOnClickListener {
+            Motion.tick(it)
+            onClick()
+        }
     }
 
     enum class Tone { OK, IDLE, AMBER, RED, NEUTRAL }
 
     /**
      * Status pills. Problems (amber, red) get a full coloured pill. Fine states are quiet:
-     * a neutral pill with a small dot.
+     * a neutral pill with a small dot. A [live] dot pulses: something is happening right now.
      */
-    fun pill(label: String, tone: Tone) = row().apply {
-        setPadding(dp(9), dp(4), dp(10), dp(4))
+    fun pill(label: String, tone: Tone, live: Boolean = false) = row().apply {
+        val dot = tone == Tone.OK || tone == Tone.IDLE
+        setPadding(dp(if (dot) 5 else 9), dp(4), dp(10), dp(4))
         val (fill, textColor) = when (tone) {
             Tone.AMBER -> amberBg to amberText
             Tone.RED -> redBg to redText
             else -> quiet to muted
         }
         background = rounded(fill, 99)
-        if (tone == Tone.OK || tone == Tone.IDLE) {
+        if (dot) {
             addView(
-                View(context).apply { background = rounded(if (tone == Tone.OK) dotOk else dotIdle, 99) },
-                LinearLayout.LayoutParams(dp(6), dp(6)).apply { marginEnd = dp(6) },
+                PulseDot(context, if (tone == Tone.OK) dotOk else dotIdle, live && motion),
+                LinearLayout.LayoutParams(dp(14), dp(14)).apply { marginEnd = dp(2) },
             )
         }
         addView(text(label, 12f, textColor, sansMedium))
         layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
     }
 
-    fun iconButton(icon: Int, description: String, onClick: () -> Unit) = ImageView(context).apply {
+    fun iconButton(icon: Int, description: String, onClick: (View) -> Unit) = ImageView(context).apply {
         setImageResource(icon)
         imageTintList = ColorStateList.valueOf(mark)
         contentDescription = description
@@ -282,7 +311,11 @@ class Ui(val context: Context) {
         background = ripple(rounded(surface, 99, border), 99)
         isClickable = true
         isFocusable = true
-        setOnClickListener { onClick() }
+        Motion.pressable(this, 0.9f)
+        setOnClickListener {
+            Motion.tick(it)
+            onClick(it)
+        }
         layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
     }
 
@@ -300,14 +333,6 @@ class Ui(val context: Context) {
         background = rounded(if (dark) 0xFF1C1917.toInt() else 0xFFFFFFFF.toInt(), 12, border, 1)
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
     }
-
-    /** Soft light behind the app, like docintel's ambient background. Static, so it costs no battery. */
-    fun ambient(): Drawable = Ambient(
-        bg,
-        if (dark) 0x26B91C1C else 0x109B2C2C,          // primary, top left
-        if (dark) 0x1FB45309 else 0xB3FEF3C7.toInt(),  // accent, right
-        if (dark) 0x14DC2626 else 0x14B45309,          // chart, bottom
-    )
 
     companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -357,54 +382,34 @@ object Fonts {
     }
 }
 
-/** Three soft radial glows over the page colour. */
-private class Ambient(private val base: Int, private vararg val glows: Int) : Drawable() {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val shaders = ArrayList<Triple<Float, Float, Float>>()
-    private val gradients = ArrayList<RadialGradient>()
-
-    override fun onBoundsChange(bounds: android.graphics.Rect) {
-        val w = bounds.width().toFloat()
-        val h = bounds.height().toFloat()
-        shaders.clear()
-        gradients.clear()
-        // Top left, right side, bottom: the same layout as the web app's three spans.
-        val spots = listOf(Triple(-0.15f * w, 0.02f * h, 0.95f * w), Triple(1.15f * w, 0.28f * h, 0.9f * w), Triple(0.3f * w, 1.08f * h, 1.0f * w))
-        spots.forEachIndexed { i, s ->
-            if (i < glows.size && s.third > 0) {
-                shaders.add(s)
-                gradients.add(RadialGradient(s.first, s.second, s.third, glows[i], glows[i] and 0x00FFFFFF, Shader.TileMode.CLAMP))
-            }
-        }
-    }
-
-    override fun draw(canvas: Canvas) {
-        canvas.drawColor(base)
-        shaders.forEachIndexed { i, s ->
-            paint.shader = gradients[i]
-            canvas.drawCircle(s.first, s.second, s.third, paint)
-        }
-    }
-
-    override fun setAlpha(alpha: Int) {}
-    override fun setColorFilter(colorFilter: ColorFilter?) {}
-    @Deprecated("Deprecated in Java")
-    override fun getOpacity() = PixelFormat.OPAQUE
-}
-
 /**
- * The battery meter: a rounded track and fill, with a brass tick at the alert level.
+ * The battery meter: a rounded track and fill, with a tick at the alert level. The fill glides
+ * to a new level, and a soft light runs along it while the phone charges.
  */
 class BatteryBar(context: Context, private val trackColor: Int, private val tickColor: Int) : View(context) {
     var level = 0
     var fillColor = Color.GRAY
     /** Alert level to mark, or 0 for none. */
     var mark = 0
+    /** When set, the fill follows this animation instead of jumping to [level]. */
+    var anim: LevelAnim? = null
+    /** A light that runs along the fill, for a phone that is charging. */
+    var shimmer = false
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val glint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val shift = Matrix()
     private val rect = RectF()
+    private var light: LinearGradient? = null
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        light = null
+    }
 
     override fun onDraw(canvas: Canvas) {
+        val now = SystemClock.uptimeMillis()
+        val moving = anim?.takeIf { !it.done(now) }
+        val shown = (moving?.value(now) ?: level.toFloat()).coerceIn(0f, 100f)
         val w = width.toFloat()
         val h = height.toFloat()
         val barH = h * 0.55f
@@ -413,10 +418,22 @@ class BatteryBar(context: Context, private val trackColor: Int, private val tick
         paint.color = trackColor
         rect.set(0f, top, w, top + barH)
         canvas.drawRoundRect(rect, r, r, paint)
-        if (level > 0) {
+        if (shown > 0f) {
+            val fillW = maxOf(barH, w * shown / 100f)
             paint.color = fillColor
-            rect.set(0f, top, maxOf(barH, w * level.coerceIn(0, 100) / 100f), top + barH)
+            rect.set(0f, top, fillW, top + barH)
             canvas.drawRoundRect(rect, r, r, paint)
+            if (shimmer) {
+                val bandW = w * 0.35f
+                val shader = light ?: LinearGradient(
+                    0f, 0f, bandW, 0f,
+                    intArrayOf(0x00FFFFFF, 0x80FFFFFF.toInt(), 0x00FFFFFF), null, Shader.TileMode.CLAMP,
+                ).also { light = it }
+                shift.setTranslate(-bandW + (fillW + bandW) * ((now % SWEEP_MS) / SWEEP_MS.toFloat()), 0f)
+                shader.setLocalMatrix(shift)
+                glint.shader = shader
+                canvas.drawRoundRect(rect, r, r, glint)
+            }
         }
         if (mark in 1..99) {
             val x = w * mark / 100f
@@ -425,6 +442,11 @@ class BatteryBar(context: Context, private val trackColor: Int, private val tick
             rect.set(x - tw / 2, 0f, x + tw / 2, h)
             canvas.drawRoundRect(rect, tw / 2, tw / 2, paint)
         }
+        if (moving != null) postInvalidateOnAnimation() else if (shimmer) postInvalidateDelayed(Motion.FRAME_MS)
+    }
+
+    private companion object {
+        const val SWEEP_MS = 1800L
     }
 }
 
