@@ -63,7 +63,7 @@ def wait(fn, timeout=30, step=1.5):
         time.sleep(step)
 
 
-def ui_nodes():
+def ui_nodes(dismiss=True):
     sh("rm -f /sdcard/ui.xml")
     sh("uiautomator dump /sdcard/ui.xml")
     xml = sh("cat /sdcard/ui.xml")
@@ -71,9 +71,22 @@ def ui_nodes():
     if start < 0:
         return []
     try:
-        return list(ET.fromstring(xml[start:]).iter("node"))
+        nodes = list(ET.fromstring(xml[start:]).iter("node"))
     except ET.ParseError:
         return []
+    # CI emulators sometimes freeze their own launcher, and Android puts an
+    # "X isn't responding" dialog over everything. It is not ours: close it and look again.
+    if dismiss and any("isn't responding" in (n.get("text") or "") for n in nodes):
+        for label in ("Close app", "Wait"):
+            node = next((n for n in nodes if n.get("text") == label), None)
+            if node is not None:
+                x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
+                sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
+                print(f"      dismissed a system 'isn't responding' dialog ({label})", flush=True)
+                break
+        time.sleep(2)
+        return ui_nodes(dismiss=False)
+    return nodes
 
 
 def screen_text():
@@ -173,6 +186,8 @@ def main():
     for cmd in ("set ac 0", "set usb 0", "set wireless 0", "set level 60"):
         sh(f"dumpsys battery {cmd}")
     # CI emulators sometimes show a "System UI isn't responding" dialog after boot.
+    # Ask Android not to show background ANR dialogs, and close any that are up.
+    sh("settings put secure anr_show_background 0")
     sh("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
     sh("input keyevent KEYCODE_HOME")
     time.sleep(2)
