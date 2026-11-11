@@ -292,7 +292,8 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
             Tone.RED -> redBg to redText
             else -> quiet to muted
         }
-        background = rounded(fill, 99)
+        // Quiet pills get a hairline, so they stay visible over any part of the background.
+        background = rounded(fill, 99, if (dot) border else 0)
         if (dot) {
             addView(
                 PulseDot(context, if (tone == Tone.OK) dotOk else dotIdle, live && motion),

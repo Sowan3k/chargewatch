@@ -49,14 +49,14 @@ import kotlin.math.roundToInt
 
 /**
  * The only screen. Built in code with the small design system in Ui.kt (no AndroidX, no XML
- * layouts), over the animated background from Motion.kt.
+ * layouts), over the living monogram background from Motion.kt.
  */
 class MainActivity : Activity() {
 
     private lateinit var prefs: Prefs
     private lateinit var ui: Ui
     private lateinit var root: FrameLayout
-    private lateinit var aurora: AuroraView
+    private lateinit var backdrop: MonogramView
     private lateinit var scroll: ScrollView
     private lateinit var content: LinearLayout
     private val main = Handler(Looper.getMainLooper())
@@ -74,6 +74,7 @@ class MainActivity : Activity() {
     private var entering = false
     private var entryUntil = 0L
     private var themeSwitching = false
+    private var introPlaying = false
 
     /** Level animations by device id. They outlive the cards, which are rebuilt on every change. */
     private val levelAnims = HashMap<String, LevelAnim>()
@@ -88,19 +89,23 @@ class MainActivity : Activity() {
             setPadding(ui.dp(20), ui.dp(18), ui.dp(20), ui.dp(32))
             clipChildren = false // the first screen's battery sends its rings past its own edges
         }
-        scroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(content)
-        }
-        aurora = AuroraView(this).apply {
+        backdrop = MonogramView(this).apply {
             setPalette(ui)
             animate = motionOn
         }
+        scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
+            // The pattern behind slides a little as the page scrolls.
+            setOnScrollChangeListener { _, _, y, _, _ -> backdrop.scrollOffset = y }
+        }
         root = FrameLayout(this).apply {
-            addView(aurora, FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(backdrop, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(scroll, FrameLayout.LayoutParams(MATCH, MATCH))
         }
         setContentView(root)
+        // A fresh start opens with the logo. Not after a rotation, and not with animations off.
+        if (savedInstanceState == null && motionOn) playIntro()
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         if (Build.VERSION.SDK_INT >= 30) edgeToEdge()
         applyBars()
@@ -119,7 +124,7 @@ class MainActivity : Activity() {
         if (motion != motionOn) {
             motionOn = motion
             ui = Ui(this, ui.dark, motion)
-            aurora.animate = motion
+            backdrop.animate = motion
         }
         Hub.addListener(hubListener)
         Hub.setUiVisible(true) // the service goes live while the screen is open
@@ -142,8 +147,23 @@ class MainActivity : Activity() {
 
     /** Every touch also reaches the background: its light follows the finger. */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        aurora.onFinger(ev)
+        backdrop.onFinger(ev)
         return super.dispatchTouchEvent(ev)
+    }
+
+    /** The opening animation, on top of everything. The screen makes its entrance as it opens. */
+    private fun playIntro() {
+        introPlaying = true
+        var intro: IntroView? = null
+        intro = IntroView(
+            this, ui,
+            onReveal = {
+                introPlaying = false
+                render()
+            },
+            onDone = { intro?.let(root::removeView) },
+        )
+        root.addView(intro, FrameLayout.LayoutParams(MATCH, MATCH))
     }
 
     // ---- Window, theme ----
@@ -234,7 +254,7 @@ class MainActivity : Activity() {
         }
 
         ui = Ui(this, dark, motionOn)
-        aurora.setPalette(ui)
+        backdrop.setPalette(ui)
         applyBars()
         render()
 
@@ -278,8 +298,9 @@ class MainActivity : Activity() {
             !prefs.nameChosen -> "name"
             else -> "pair"
         }
-        entering = screen != lastScreen
-        lastScreen = screen
+        // While the opening plays the screen is built but hidden. Its entrance waits for the reveal.
+        entering = screen != lastScreen && !introPlaying
+        lastScreen = if (introPlaying) null else screen
         if (group == null) renderWelcome() else renderGroup(group)
         if (entering) {
             // A new screen starts at the top, and its parts rise in one after the other.

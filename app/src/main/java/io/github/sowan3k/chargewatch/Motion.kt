@@ -7,10 +7,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PathMeasure
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
-import android.graphics.SweepGradient
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
@@ -19,16 +19,16 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.TextView
-import kotlin.math.PI
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * Motion for the screen: the animated background, touch reactions and small transitions.
+ * Motion for the screen: the living background, the opening, touch reactions and transitions.
  *
  * Rules that keep it cheap: everything is drawn by the views themselves and only while they are
  * on screen (a view that is not drawn schedules no next frame), continuous animation runs at
@@ -124,13 +124,14 @@ class LevelAnim(val from: Int, val to: Int, private val startMs: Long) {
 }
 
 /**
- * The background: soft glows that drift, and wide arcs that flow outward from a point off the
- * lower right, each one catching a streak of light that sways. The light follows the finger,
- * and a glow blooms under it.
+ * The background: a monogram canvas. ChargeWatch's own marks (the "CW" monogram, a bolt in a
+ * ring, a small battery) repeat on a diagonal lattice with dots between them, tone on tone over
+ * soft drifting glows. A band of light crosses it every few seconds, single marks glint, the
+ * marks near the finger light up and grow, and the pattern slides a little as the page scrolls.
  *
- * Original to this app, drawn with plain Canvas gradients in the theme's colours.
+ * Original to this app, drawn with plain Canvas in the theme's colours.
  */
-class AuroraView(context: Context) : View(context) {
+class MonogramView(context: Context) : View(context) {
     /** Off: one still frame is drawn and nothing moves. */
     var animate = false
         set(value) {
@@ -143,17 +144,47 @@ class AuroraView(context: Context) : View(context) {
             invalidate()
         }
 
+    /** How far the page is scrolled, in pixels. The pattern follows at a quarter of the speed. */
+    var scrollOffset = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            if (animate) invalidate()
+        }
+
     private val density = resources.displayMetrics.density
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
     private val unit = arrayOfNulls<RadialGradient>(4) // three glows and the touch glow, radius 1
-    private var sheen: SweepGradient? = null
+    private val rect = RectF()
+
+    // The marks, in dp around their centre.
+    private val monogram = Path().apply {
+        val u = 0.8f
+        val cx = (-9f - 1.6f) * u
+        addArc(RectF(cx - 6.8f * u, -8f * u, cx + 6.8f * u, 8f * u), -48f, -264f)
+        val w = floatArrayOf(-1f, -8f, 3.75f, 8f, 9f, -2.5f, 14.25f, 8f, 19f, -8f)
+        moveTo((w[0] - 1.6f) * u, w[1] * u)
+        for (i in 2 until w.size step 2) lineTo((w[i] - 1.6f) * u, w[i + 1] * u)
+    }
+    private val bolt = Path().apply {
+        moveTo(1.6f, -6f)
+        lineTo(-4f, 0.8f)
+        lineTo(-0.4f, 0.8f)
+        lineTo(-1.6f, 6f)
+        lineTo(4f, -0.8f)
+        lineTo(0.4f, -0.8f)
+        close()
+    }
 
     private var base = Color.WHITE
-    private var rim = 0
-    private var band = 0
-    private var bandSheen = 0f
-    private var sheenColors = IntArray(6)
+    private var inkColor = 0
+    private var lightColor = 0
+    private var inkAlpha = 0f
+    private var lightAlpha = 0f
 
     private var clock = STILL
     private var lastFrame = 0L
@@ -167,21 +198,16 @@ class AuroraView(context: Context) : View(context) {
     fun setPalette(ui: Ui) {
         val d = ui.dark
         base = ui.bg
-        val glows = if (d) intArrayOf(0x42B91C1C, 0x38B45309, 0x21DC2626) else intArrayOf(0x1A9B2C2C, 0xD9FEECAA.toInt(), 0x1AB45309)
+        val glows = if (d) intArrayOf(0x3DB91C1C, 0x33B45309, 0x1FDC2626) else intArrayOf(0x179B2C2C, 0xCCFEECAA.toInt(), 0x17B45309)
         val finger = if (d) 0x38FBBF24 else 0xBFFEDC96.toInt()
         (glows + finger).forEachIndexed { i, c ->
             unit[i] = RadialGradient(0f, 0f, 1f, c, c and 0x00FFFFFF, Shader.TileMode.CLAMP)
         }
-        rim = if (d) 0x13F5F5F4 else 0x169B2C2C
-        band = if (d) 0x06F5F5F4 else 0x069B2C2C
-        bandSheen = if (d) 0.16f else 0.12f
-        // The streak: warm on one side, bright in the middle, rose on the other.
-        sheenColors = if (d) {
-            intArrayOf(0x00FBBF24, 0x8CFBBF24.toInt(), 0xD9FFF7ED.toInt(), 0x80F87171.toInt(), 0x00F87171, 0x00F87171)
-        } else {
-            intArrayOf(0x00D97706, 0x5CD97706, 0x759B2C2C, 0x4DF47280, 0x00F47280, 0x00F47280)
-        }
-        buildSheen()
+        // Tone on tone: claret on paper, champagne on stone. Lit marks turn amber or gold.
+        inkColor = if (d) 0xF2DDB0 else 0x9B2C2C
+        lightColor = if (d) 0xFBBF24 else 0xB45309
+        inkAlpha = if (d) 0.075f else 0.085f
+        lightAlpha = if (d) 0.62f else 0.50f
         invalidate()
     }
 
@@ -199,19 +225,12 @@ class AuroraView(context: Context) : View(context) {
         }
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = buildSheen()
-
     /** A sheet or the notification shade is on top: hold still until the screen is back. */
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
         super.onWindowFocusChanged(hasWindowFocus)
         focused = hasWindowFocus
         lastFrame = 0L
         if (hasWindowFocus) invalidate()
-    }
-
-    private fun buildSheen() {
-        if (width == 0 || height == 0) return
-        sheen = SweepGradient(width * CX, height * CY, sheenColors, floatArrayOf(0f, 0.022f, 0.045f, 0.068f, SPAN, 1f))
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -238,50 +257,91 @@ class AuroraView(context: Context) : View(context) {
                 w * g[2] * (1f + 0.08f * sin(t * 0.33f + i)),
             )
         }
-        if (touch > 0.01f) glow(canvas, 3, (255 * touch).toInt(), touchX, touchY, w * 0.5f)
+        val touching = touch > 0.01f
+        if (touching) glow(canvas, 3, (255 * touch).toInt(), touchX, touchY, w * 0.5f)
 
-        // Arcs: ring k sits at r0 * q^(k + phase), so every ring grows into the next one's place.
-        val cx = w * CX
-        val cy = h * CY
-        val phase = (t / FLOW_SECONDS) % 1f
-        var theta = 212f + 22f * sin(t * 0.5f)
-        if (touch > 0.01f) {
-            val toFinger = (Math.toDegrees(atan2((touchY - cy).toDouble(), (touchX - cx).toDouble())).toFloat() + 360f) % 360f
-            theta += (toFinger - theta) * 0.85f * touch
-        }
-        val sweep = sheen
-        for (k in 0 until RINGS) {
-            val u = (k + phase) / RINGS
-            val r = w * R0 * Q.pow(k + phase)
-            val gap = r * (Q - 1f)
-            val fade = sin(PI.toFloat() * u).pow(0.6f)
+        // The lattice: rows half a step apart, every other row shifted by half a step.
+        val step = STEP_DP * density
+        val rowH = step / 2f
+        val period = 4f * rowH
+        val slide = -((scrollOffset * 0.25f) % period)
+        // The band of light: it crosses the screen diagonally, then rests until the next cycle.
+        val cycle = (t % SHEEN_SECONDS) / SHEEN_SECONDS
+        val span = w + h * 0.6f
+        val bandAt = -0.25f * span + 1.5f * span * (cycle / 0.55f).coerceAtMost(1f)
+        val bandWidth = 150f * density
+        val reach = 130f * density
 
-            line.shader = null
-            line.color = band
-            line.alpha = (Color.alpha(band) * fade).toInt()
-            line.strokeWidth = gap * 0.46f
-            canvas.drawCircle(cx, cy, r + gap * 0.25f, line)
-            line.color = rim
-            line.alpha = (Color.alpha(rim) * fade).toInt()
-            line.strokeWidth = 1.25f * density
-            canvas.drawCircle(cx, cy, r, line)
+        var j = -4
+        while (j * rowH < h + period) {
+            val y = j * rowH + slide
+            val kind = ((j % 4) + 4) % 4
+            val shift = if (kind % 2 == 1) step / 2f else 0f
+            var i = -1
+            while (i * step < w + step) {
+                val x = i * step + shift
+                var light = exp(-((x + y * 0.6f - bandAt) / bandWidth).pow(2))
+                // Each mark has its own moment to glint.
+                val seed = sin(i * 12.9898f + j * 78.233f) * 43758.547f
+                val phase = (seed - floor(seed)) * 6.2832f
+                light += 0.55f * sin(t * 0.9f + phase).coerceAtLeast(0f).pow(14)
+                var scale = 1f
+                if (touching) {
+                    val dx = x - touchX
+                    val dy = y - touchY
+                    val near = touch * exp(-(dx * dx + dy * dy) / (reach * reach))
+                    light += 1.2f * near
+                    scale += 0.35f * near
+                }
+                light = light.coerceIn(0f, 1f)
+                ink.color = mix(inkColor, lightColor, light)
+                ink.alpha = (255 * (inkAlpha + (lightAlpha - inkAlpha) * light)).toInt()
 
-            if (sweep != null) {
-                // The streak sits at a slightly different angle on every ring, like light on curved metal.
                 canvas.save()
-                canvas.rotate(theta + (k - RINGS / 2f) * 3.2f - SPAN * 180f, cx, cy)
-                line.shader = sweep
-                line.color = Color.BLACK
-                line.alpha = (255 * fade).toInt()
-                line.strokeWidth = 2.6f * density
-                canvas.drawCircle(cx, cy, r, line)
-                line.alpha = (255 * fade * bandSheen).toInt()
-                line.strokeWidth = gap * 0.42f
-                canvas.drawCircle(cx, cy, r + gap * 0.25f, line)
+                canvas.translate(x, y)
+                canvas.scale(density * scale, density * scale)
+                when {
+                    kind == 0 -> {
+                        ink.style = Paint.Style.STROKE
+                        ink.strokeWidth = 2f
+                        canvas.drawPath(monogram, ink)
+                    }
+                    kind == 2 && i % 2 == 0 -> {
+                        ink.style = Paint.Style.STROKE
+                        ink.strokeWidth = 1.3f
+                        canvas.drawCircle(0f, 0f, 10f, ink)
+                        ink.style = Paint.Style.FILL
+                        canvas.drawPath(bolt, ink)
+                    }
+                    kind == 2 -> {
+                        ink.style = Paint.Style.STROKE
+                        ink.strokeWidth = 1.5f
+                        rect.set(-10.5f, -5.5f, 8.5f, 5.5f)
+                        canvas.drawRoundRect(rect, 3f, 3f, ink)
+                        ink.style = Paint.Style.FILL
+                        rect.set(9.6f, -2.2f, 11.6f, 2.2f)
+                        canvas.drawRoundRect(rect, 0.8f, 0.8f, ink)
+                        rect.set(-7.6f, -2.6f, 0.9f, 2.6f)
+                        canvas.drawRoundRect(rect, 1.2f, 1.2f, ink)
+                    }
+                    else -> {
+                        ink.style = Paint.Style.FILL
+                        canvas.drawCircle(0f, 0f, 1.7f, ink)
+                    }
+                }
                 canvas.restore()
+                i++
             }
+            j++
         }
         if (animate && focused) postInvalidateDelayed(Motion.FRAME_MS)
+    }
+
+    private fun mix(a: Int, b: Int, f: Float): Int {
+        val r = (Color.red(a) + (Color.red(b) - Color.red(a)) * f).toInt()
+        val g = (Color.green(a) + (Color.green(b) - Color.green(a)) * f).toInt()
+        val bl = (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * f).toInt()
+        return Color.rgb(r, g, bl)
     }
 
     private fun glow(canvas: Canvas, index: Int, alpha: Int, x: Float, y: Float, radius: Float) {
@@ -295,23 +355,194 @@ class AuroraView(context: Context) : View(context) {
     }
 
     private companion object {
-        /** The moment shown when nothing moves. */
-        const val STILL = 4f
-        /** Centre of the arcs, as a fraction of the view: off the lower right corner. */
-        const val CX = 1.45f
-        const val CY = 1.0f
-        const val R0 = 0.52f
-        const val Q = 1.3f
-        const val RINGS = 8
-        const val FLOW_SECONDS = 9f
-        /** Width of the streak, as a fraction of a full turn. */
-        const val SPAN = 0.09f
+        /** The moment shown when nothing moves: the band of light is off screen. */
+        const val STILL = 5.5f
+        /** Distance between marks in a row, in dp. */
+        const val STEP_DP = 72f
+        const val SHEEN_SECONDS = 7f
         /** Per glow: x, y, radius, drift x, drift y, speed x, speed y, phase (fractions of the view). */
         val GLOWS = arrayOf(
             floatArrayOf(-0.05f, 0.06f, 0.95f, 0.20f, 0.10f, 0.31f, 0.23f, 0.0f),
             floatArrayOf(1.05f, 0.30f, 0.90f, 0.18f, 0.12f, 0.26f, 0.37f, 2.1f),
             floatArrayOf(0.35f, 1.02f, 1.00f, 0.22f, 0.08f, 0.21f, 0.29f, 4.0f),
         )
+    }
+}
+
+/**
+ * The opening: the battery draws itself, "CW" is written inside it, it fills with charge and
+ * sends out a ring, the name appears, and then the picture opens from its centre onto the app.
+ * About a second and a half. A tap skips it.
+ */
+class IntroView(
+    context: Context,
+    private val ui: Ui,
+    private val onReveal: () -> Unit,
+    private val onDone: () -> Unit,
+) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = ui.display
+        textAlign = Paint.Align.CENTER
+    }
+    private val rect = RectF()
+    private val part = Path()
+    private val hole = Path()
+    private val measure = PathMeasure()
+    private val body = Path()
+    private val letterC = Path()
+    private val letterW = Path()
+    private var glow: RadialGradient? = null
+    private var start = 0L
+    private var revealed = false
+    private var finished = false
+
+    init {
+        isClickable = true
+        setOnClickListener {
+            // Skip to the opening.
+            val now = SystemClock.uptimeMillis()
+            if (start != 0L && now - start < REVEAL_AT) start = now - REVEAL_AT.toLong()
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        val d = resources.displayMetrics.density
+        val cx = w / 2f
+        val cy = h * CENTRE_Y
+        body.rewind()
+        rect.set(cx - 74f * d, cy - 37f * d, cx + 74f * d, cy + 37f * d)
+        body.addRoundRect(rect, 18f * d, 18f * d, Path.Direction.CW)
+        // The same letters as the icon and the background, larger.
+        val u = 2.3f * d
+        val ox = cx - 1.6f * u
+        letterC.rewind()
+        letterC.addArc(RectF(ox - 15.8f * u, cy - 8f * u, ox - 2.2f * u, cy + 8f * u), -48f, -264f)
+        letterW.rewind()
+        val p = floatArrayOf(-1f, -8f, 3.75f, 8f, 9f, -2.5f, 14.25f, 8f, 19f, -8f)
+        letterW.moveTo(ox + p[0] * u, cy + p[1] * u)
+        for (i in 2 until p.size step 2) letterW.lineTo(ox + p[i] * u, cy + p[i + 1] * u)
+        val c = if (ui.dark) 0x38B45309 else 0xCCFEECAA.toInt()
+        glow = RadialGradient(cx, cy, w * 0.8f, c, c and 0x00FFFFFF, Shader.TileMode.CLAMP)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val now = SystemClock.uptimeMillis()
+        if (start == 0L) start = now
+        val t = (now - start).toFloat()
+        val d = resources.displayMetrics.density
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val cx = w / 2f
+        val cy = h * CENTRE_Y
+
+        // The opening: a hole grows from the logo and the app shows through it.
+        val reveal = span(t, REVEAL_AT, END)
+        if (reveal > 0f) {
+            if (!revealed) {
+                revealed = true
+                post(onReveal)
+            }
+            hole.rewind()
+            hole.addCircle(cx, cy, hypot(w, h) * reveal * reveal, Path.Direction.CW)
+            canvas.clipOutPath(hole)
+        }
+        canvas.drawColor(ui.bg)
+        paint.shader = glow
+        paint.style = Paint.Style.FILL
+        canvas.drawRect(0f, 0f, w, h, paint)
+        paint.shader = null
+
+        val fade = ((1f - reveal * 2.2f).coerceIn(0f, 1f) * 255).toInt()
+
+        // Charge fills the battery from the left.
+        val charge = smooth(span(t, 480f, 1050f))
+        if (charge > 0f) {
+            paint.style = Paint.Style.FILL
+            paint.color = ui.brand
+            paint.alpha = (fade * if (ui.dark) 0.45f else 0.38f).toInt()
+            val inset = 10f * d
+            rect.set(cx - 74f * d + inset, cy - 37f * d + inset, cx - 74f * d + inset + (148f * d - 2 * inset) * charge, cy + 37f * d - inset)
+            canvas.drawRoundRect(rect, 9f * d, 9f * d, paint)
+        }
+
+        // The ring that goes out when it is full.
+        val ring = span(t, 980f, 1320f)
+        if (ring > 0f && ring < 1f) {
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.5f * d
+            paint.color = ui.mark
+            paint.alpha = ((1f - ring) * fade * 0.8f).toInt()
+            val grow = 1f + 0.5f * smooth(ring)
+            rect.set(cx - 74f * d * grow, cy - 37f * d * grow, cx + 74f * d * grow, cy + 37f * d * grow)
+            canvas.drawRoundRect(rect, 18f * d * grow, 18f * d * grow, paint)
+        }
+
+        // The battery draws itself, then its terminal appears.
+        paint.style = Paint.Style.STROKE
+        paint.color = ui.fg
+        paint.alpha = fade
+        paint.strokeWidth = 6f * d
+        trace(canvas, body, smooth(span(t, 0f, 480f)))
+        val nub = span(t, 400f, 520f)
+        if (nub > 0f) {
+            paint.style = Paint.Style.FILL
+            paint.alpha = (fade * nub).toInt()
+            rect.set(cx + 79f * d, cy - 12f * d, cx + 87f * d, cy + 12f * d)
+            canvas.drawRoundRect(rect, 3f * d, 3f * d, paint)
+        }
+
+        // "CW" is written inside.
+        paint.style = Paint.Style.STROKE
+        paint.alpha = fade
+        paint.strokeWidth = 6.5f * d
+        trace(canvas, letterC, smooth(span(t, 220f, 500f)))
+        trace(canvas, letterW, smooth(span(t, 420f, 780f)))
+
+        // The name rises in under it.
+        val name = smooth(span(t, 420f, 820f))
+        if (name > 0f) {
+            text.color = ui.fg
+            text.alpha = (fade * name).toInt()
+            text.textSize = 30f * resources.displayMetrics.scaledDensity
+            canvas.drawText("ChargeWatch", cx, cy + 37f * d + 58f * d + (1f - name) * 10f * d, text)
+        }
+
+        if (t >= END) {
+            if (!finished) {
+                finished = true
+                post(onDone)
+            }
+        } else {
+            postInvalidateOnAnimation()
+        }
+    }
+
+    /** Draws the first [fraction] of a path's length. */
+    private fun trace(canvas: Canvas, path: Path, fraction: Float) {
+        if (fraction <= 0f) return
+        if (fraction >= 1f) {
+            canvas.drawPath(path, paint)
+            return
+        }
+        measure.setPath(path, false)
+        part.rewind()
+        measure.getSegment(0f, measure.length * fraction, part, true)
+        canvas.drawPath(part, paint)
+    }
+
+    private fun span(t: Float, from: Float, to: Float) = ((t - from) / (to - from)).coerceIn(0f, 1f)
+
+    private fun smooth(x: Float) = x * x * (3f - 2f * x)
+
+    private companion object {
+        const val REVEAL_AT = 1150f
+        const val END = 1600f
+        /** The logo sits a little above the middle. */
+        const val CENTRE_Y = 0.42f
     }
 }
 

@@ -64,7 +64,9 @@ To unpair, tap **Leave group**. The other phones remove this one from their list
 
 ## Look and feel
 
-The screen sits on a moving background: soft glows that drift, and wide arcs that flow outward, each catching a streak of light. The light follows your finger. Screens rise in, battery numbers count to their value, a charging bar carries a running light, and live status dots pulse. Everything you can tap sinks under the finger, shows a ripple and gives a light haptic tick. Cards are glass, so a little of the motion shows through.
+The app opens with a short animation: the battery draws itself, "CW" is written inside, it fills with charge, and the picture opens onto the app. A tap skips it.
+
+The screen sits on a monogram canvas: ChargeWatch's own marks (the "CW" monogram, a bolt in a ring, a small battery) repeat on a diagonal lattice with dots between them, tone on tone over soft drifting glows. A band of light crosses it every few seconds, single marks glint, the marks near your finger light up, and the pattern slides a little as you scroll. Screens rise in, battery numbers count to their value, a charging bar carries a running light, and live status dots pulse. Everything you can tap sinks under the finger, shows a ripple and gives a light haptic tick. Cards are glass, so a little of the motion shows through.
 
 The sun or moon at the top switches between light and dark with a circular wipe. Settings > Appearance offers System, Light and Dark.
 
@@ -131,7 +133,7 @@ You need JDK 17 and the Android SDK (platform 34).
 # APK: app/build/outputs/apk/release/app-release.apk
 ```
 
-The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a warm claret theme (off-white paper, claret actions, amber for charging, with a warm stone dark mode), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), glass cards, status pills and bottom sheets. `Motion.kt` holds the animated background and the touch and transition effects. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
+The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a warm claret theme (off-white paper, claret actions, amber for charging, with a warm stone dark mode), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), glass cards, status pills and bottom sheets. `Motion.kt` holds the monogram background, the opening animation and the touch and transition effects. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
 
 Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest). A second job installs that APK on an Android 14 emulator and drives it end to end (`.github/scripts/emulator_test.py`): it creates a group, checks that battery changes reach ntfy.sh, plays a second phone to trigger both alerts, restarts the app to make sure alerts do not repeat, and leaves the group.
 

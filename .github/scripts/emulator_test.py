@@ -297,7 +297,11 @@ def main():
     sh(f"am force-stop {PKG}")
     time.sleep(1)
     sh(f"am start -W -n {PKG}/.MainActivity")
-    time.sleep(6)
+    # A fresh start plays the opening animation. Keep a few frames of it to look at.
+    for n in "abc":
+        with open(f"emulator-10-intro-{n}.png", "wb") as f:
+            f.write(run(["adb", "exec-out", "screencap", "-p"], binary=True))
+    time.sleep(5)
     frame_a = run(["adb", "exec-out", "screencap", "-p"], binary=True)
     time.sleep(1.5)
     frame_b = run(["adb", "exec-out", "screencap", "-p"], binary=True)
