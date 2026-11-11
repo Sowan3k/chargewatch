@@ -14,13 +14,16 @@ Your main phone is charging in another room and you are using a second phone. Ch
 It is a tiny Android app with no account and no backend. Phones pair by scanning a QR code and talk through the free [ntfy.sh](https://ntfy.sh) push relay.
 
 <p align="center">
-  <img src="docs/screenshots/name.png" width="250" alt="Onboarding: name this phone or use the system name">
+  <img src="docs/screenshots/opening.png" width="250" alt="The opening animation: the battery draws itself and fills with charge">
   <img src="docs/screenshots/main.png" width="250" alt="Main screen: another phone at 100% and this phone charging">
   <img src="docs/screenshots/main-dark.png" width="250" alt="Main screen in dark mode">
 </p>
 <p align="center">
+  <img src="docs/screenshots/name.png" width="250" alt="Onboarding: name this phone or use the system name">
   <img src="docs/screenshots/pairing.png" width="250" alt="Onboarding: pair your phones">
   <img src="docs/screenshots/qr.png" width="250" alt="Add a phone: QR code and group code">
+</p>
+<p align="center">
   <img src="docs/screenshots/settings.png" width="250" alt="Settings sheet">
 </p>
 
