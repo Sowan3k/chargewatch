@@ -208,6 +208,10 @@ def key_rotation_test(apk):
     out = run(["adb", "install", "-r", apk])
     print(out.strip())
     check("Success" in out, "the release (private key, proof of rotation) installs over it as an update")
+    # The update wakes the app (MY_PACKAGE_REPLACED). Let that run out before touching the package
+    # again: replacing or removing a package while its process is still starting crashes the start.
+    time.sleep(6)
+    sh(f"am force-stop {PKG}")
     after, updated = package_times()
     check(first is not None and after == first and updated != first, "and it is an update that keeps the app's data")
     print(next((l.strip() for l in sh(f"dumpsys package {PKG}").splitlines() if "signatures" in l and "past" in l), ""))
@@ -217,7 +221,19 @@ def key_rotation_test(apk):
     check("Success" not in out and ("UPDATE_INCOMPATIBLE" in out or "signatures do not match" in out.lower()),
           "a copy signed with the old public key can no longer replace it")
     check(package_times()[0] == first, "and the release stays installed")
+    sh(f"am force-stop {PKG}")
     run(["adb", "uninstall", PKG])
+    time.sleep(3)
+
+    # Crashes in the app's own code fail the test. A crash while Android binds a process for a
+    # package that was just replaced or removed has no app frames; print it, then clear the buffer
+    # so the later crash checks only see the main test.
+    crashes = run(["adb", "logcat", "-b", "crash", "-d"])
+    check("at io.github.sowan3k" not in crashes, "no crash in the app's code during the key rotation test")
+    if PKG in crashes:
+        print("      (a crash in Android's process start during the package churn, no app frames:)")
+        print("\n".join("      " + l for l in crashes.strip().splitlines()[-8:]))
+    run(["adb", "logcat", "-b", "crash", "-c"])
 
 
 def main():

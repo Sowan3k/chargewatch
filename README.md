@@ -155,7 +155,7 @@ The QR scanner comes from Google Play services through Google's ML Kit library, 
 
 **Check a download.** With the Android SDK, run `apksigner verify --print-certs --min-sdk-version 28 ChargeWatch.apk`. The certificate SHA-256 must match the release key above. The in-app updater also only downloads from this repository's releases and checks each APK's SHA-256 against the release before handing it to Android.
 
-**Reporting a problem.** Open an issue, or use GitHub's private vulnerability reporting on this repository for anything sensitive.
+**Reporting a problem.** Open an issue. If it is sensitive, say so in the issue without the details, and we will set up a private channel.
 
 ## Self-hosted relay
 
