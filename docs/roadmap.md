@@ -33,7 +33,7 @@ Two cases remain untested. The test's "old app" is the current code signed with 
 
 ## Reliability issues found while reviewing
 
-Two issues work against the user's main worry, "is it working?". They belong in the next release whatever else goes in.
+Two issues work against the user's main worry, "is it working?". They belong in the next release whatever else goes in. Both are now fixed, together with feature 1 below.
 
 The heartbeat is not saved. `Prefs.saveDevices` drops each phone's heartbeat. After the app restarts, a phone on battery that promises a report every 60 minutes counts as a 30-minute phone. It turns "Offline" after about 65 minutes instead of 125. The same value decides whether the receiver goes live, so this can also delay alerts.
 
@@ -74,7 +74,7 @@ Each of these would cost more than it gives, so the plan leaves them out:
 
 All five are local changes. Only the test message adds a field to the protocol, and older versions ignore it. Pairing is unchanged.
 
-### 1. Honest, informative alerts
+### 1. Honest, informative alerts (done)
 
 Includes the two reliability fixes above.
 
@@ -152,7 +152,7 @@ This is what users can expect, based on how the code works. The emulator scenari
 | Receiver has the app open | Seconds |
 | Another phone charging, receiver battery Unrestricted | Seconds for the 80%, full and unplugged alerts once the receiver is live. It goes live at its next check after the charge starts, usually within 15 minutes. |
 | Receiver screen locked for hours, Unrestricted | Same as above. Exempt apps keep network access in Doze. |
-| Receiver not Unrestricted | Up to about 15 to 20 minutes, longer in deep Doze. Today an alert later than 20 minutes is dropped. Release 1.1 delivers it, marked late, up to 2 hours. |
+| Receiver not Unrestricted | Up to about 15 to 20 minutes, longer in deep Doze. A transition found up to 2 hours late still alerts and says when the phone reported. Before 1.1, anything later than 20 minutes was dropped. |
 | Wi-Fi to mobile data | The stream reconnects at once on the network change. Nothing is lost (12-hour relay cache). |
 | Network lost for a while | The app waits for the network and resumes from the last message id. Alerts that are still relevant fire, marked late. |
 | Phone rebooted | The boot receiver runs a check and goes live if a phone is charging. |

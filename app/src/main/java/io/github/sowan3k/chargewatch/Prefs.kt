@@ -112,44 +112,10 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_UPDATE_NOTIFIED, 0)
         set(v) = sp.edit().putInt(KEY_UPDATE_NOTIFIED, v).apply()
 
-    fun loadDevices(): List<Device> {
-        val raw = sp.getString(KEY_DEVICES, null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                Device(
-                    id = o.getString("id"),
-                    name = o.optString("name", "Phone"),
-                    level = o.optInt("level"),
-                    charging = o.optBoolean("charging"),
-                    time = o.optLong("time"),
-                    msgId = o.optString("mid"),
-                    alertedThreshold = o.optBoolean("at"),
-                    alertedFull = o.optBoolean("af"),
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    fun loadDevices(): List<Device> = DeviceJson.decode(sp.getString(KEY_DEVICES, null))
 
     fun saveDevices(list: Collection<Device>) {
-        val arr = JSONArray()
-        list.forEach { d ->
-            arr.put(
-                JSONObject()
-                    .put("id", d.id)
-                    .put("name", d.name)
-                    .put("level", d.level)
-                    .put("charging", d.charging)
-                    .put("time", d.time)
-                    .put("mid", d.msgId)
-                    .put("at", d.alertedThreshold)
-                    .put("af", d.alertedFull)
-            )
-        }
-        sp.edit().putString(KEY_DEVICES, arr.toString()).apply()
+        sp.edit().putString(KEY_DEVICES, DeviceJson.encode(list)).apply()
     }
 
     /** Appearance: follow the system, or always light, or always dark. */

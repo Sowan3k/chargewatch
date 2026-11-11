@@ -1,5 +1,7 @@
 package io.github.sowan3k.chargewatch
 
+import org.json.JSONArray
+import org.json.JSONObject
 import java.security.SecureRandom
 
 /** One phone in the group, as last reported over the relay. */
@@ -30,8 +32,12 @@ data class Update(val changed: Boolean, val alert: Alert? = null)
  * Rules:
  * - Alerts fire only on a transition: the previous level was below the mark and the new
  *   level is at or above it.
- * - Alerts fire only for recent messages (under [FRESH_SECONDS] old) and never for this phone.
- *   The window is wide enough for a low-power check, which can run up to ~15 minutes late.
+ * - Alerts fire only for recent messages and never for this phone. A message is recent when it
+ *   is under [FRESH_SECONDS] old, which covers a low-power check running ~15 minutes late. When
+ *   this phone resumes from the last message it saw ("resumed"), everything it fetches is news
+ *   to it, so transitions up to [LATE_SECONDS] old still alert, and the alert says how late it
+ *   is. The first read after joining replays a 12-hour backlog and is never "resumed", so old
+ *   transitions in it stay quiet.
  * - Each alert fires at most once per charge. It re-arms when the phone is unplugged or the
  *   level drops clearly below the mark. This stops repeat alerts when a phone hovers at
  *   99/100 % or sits at an 80 % charge limit.
@@ -81,7 +87,11 @@ class Tracker(private val selfId: String) {
         return gone.isNotEmpty()
     }
 
-    fun onMessage(msg: Device, nowSec: Long, threshold: Int): Update {
+    /**
+     * [resumed] is true when the message came from a read that continued from the last message
+     * id this phone had seen, so the message is new to this phone even if it is old.
+     */
+    fun onMessage(msg: Device, nowSec: Long, threshold: Int, resumed: Boolean = false): Update {
         val prev = map[msg.id]
         if (prev != null) {
             if (msg.time < prev.time) return Update(false)
@@ -114,8 +124,9 @@ class Tracker(private val selfId: String) {
 
         // The flags still update for stale messages and for this phone, so a replayed
         // transition counts as "already alerted" and cannot fire later.
-        val fresh = nowSec - msg.time <= FRESH_SECONDS
-        if (!fresh || msg.id == selfId) alert = null
+        val age = nowSec - msg.time
+        val recent = age <= FRESH_SECONDS || (resumed && age <= LATE_SECONDS)
+        if (!recent || msg.id == selfId) alert = null
 
         map[msg.id] = msg.copy(alertedThreshold = alertedThreshold, alertedFull = alertedFull)
         return Update(true, alert)
@@ -123,6 +134,8 @@ class Tracker(private val selfId: String) {
 
     companion object {
         const val FRESH_SECONDS = 20 * 60L
+        /** How late a transition may be found and still alert, when the read resumed. */
+        const val LATE_SECONDS = 2 * 3600L
         const val REARM_MARGIN = 5
         const val DEFAULT_HEARTBEAT = 30 * 60
         /** A phone silent this long is dropped from the list. */
@@ -135,6 +148,116 @@ class Tracker(private val selfId: String) {
 
         fun isStale(d: Device, nowSec: Long): Boolean = nowSec - d.time > staleAfter(d)
     }
+}
+
+/**
+ * Alerts from one burst of messages (a check, or a reconnect that replays what was missed),
+ * reduced to what is still worth showing:
+ * - one alert per phone, the newest (a later "full" replaces "reached 80%");
+ * - none for a phone that a later message shows unplugged or gone, since nobody needs to act.
+ * A live message is a burst of one, so it passes straight through.
+ */
+class AlertQueue {
+    private val pending = LinkedHashMap<String, Pair<Device, Alert>>()
+
+    fun offer(d: Device, update: Update) {
+        val alert = update.alert
+        if (alert != null) {
+            pending[d.id] = d to alert
+        } else if (update.changed && !d.charging) {
+            pending.remove(d.id)
+        }
+    }
+
+    fun drop(id: String) {
+        pending.remove(id)
+    }
+
+    fun isEmpty() = pending.isEmpty()
+
+    fun drain(): List<Pair<Device, Alert>> = pending.values.toList().also { pending.clear() }
+}
+
+/**
+ * The words of a charge alert. They say what was reported and when, and never suggest the
+ * news is live when it reached this phone late (Android may hold background checks back).
+ */
+object AlertText {
+    /** Reports older than this read as late and say when they were sent. */
+    const val LATE_NOTE_SECONDS = 2 * 60L
+
+    fun title(d: Device, alert: Alert): String = when (alert) {
+        Alert.THRESHOLD -> "${d.name} reached ${d.level}% · Charging"
+        Alert.FULL -> if (d.charging) "${d.name} is full · Still on the charger" else "${d.name} is full"
+    }
+
+    fun text(d: Device, alert: Alert, nowSec: Long): String {
+        val age = nowSec - d.time
+        if (age > LATE_NOTE_SECONDS) {
+            val reported = "Reported ${agoPrecise(age)}."
+            return when (alert) {
+                Alert.THRESHOLD -> "$reported The update arrived late, so it may be higher now."
+                Alert.FULL -> "$reported The update arrived late."
+            }
+        }
+        return when (alert) {
+            Alert.THRESHOLD -> "Unplug it now if that is enough."
+            Alert.FULL -> if (d.charging) "You can unplug it and use it now." else "You can use it now."
+        }
+    }
+}
+
+/**
+ * Device state as stored on this phone between runs. The heartbeat is kept too: without it, a
+ * phone on battery (one report an hour) looked like a 30-minute phone after a restart and was
+ * shown as offline an hour early.
+ */
+object DeviceJson {
+    fun encode(list: Collection<Device>): String {
+        val arr = JSONArray()
+        list.forEach { d ->
+            arr.put(
+                JSONObject()
+                    .put("id", d.id)
+                    .put("name", d.name)
+                    .put("level", d.level)
+                    .put("charging", d.charging)
+                    .put("time", d.time)
+                    .put("mid", d.msgId)
+                    .put("at", d.alertedThreshold)
+                    .put("af", d.alertedFull)
+                    .put("hb", d.heartbeat)
+            )
+        }
+        return arr.toString()
+    }
+
+    fun decode(raw: String?): List<Device> {
+        if (raw == null) return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                Device(
+                    id = o.getString("id"),
+                    name = o.optString("name", "Phone"),
+                    level = o.optInt("level"),
+                    charging = o.optBoolean("charging"),
+                    time = o.optLong("time"),
+                    msgId = o.optString("mid"),
+                    alertedThreshold = o.optBoolean("at"),
+                    alertedFull = o.optBoolean("af"),
+                    // Saved by older versions without it: the old default, until the next report.
+                    heartbeat = o.optInt("hb", Tracker.DEFAULT_HEARTBEAT).coerceIn(MIN_HEARTBEAT, MAX_HEARTBEAT),
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    const val MIN_HEARTBEAT = 5 * 60
+    const val MAX_HEARTBEAT = 24 * 60 * 60
 }
 
 /** An invite read from a QR code or typed in by hand. */
@@ -200,4 +323,11 @@ fun ago(seconds: Long): String = when {
     seconds < 3600 -> "${seconds / 60} min ago"
     seconds < 86400 -> "${seconds / 3600} h ago"
     else -> "${seconds / 86400} d ago"
+}
+
+/** Like [ago], but keeps the minutes past the hour: "1 h 50 min ago". For alert texts. */
+fun agoPrecise(seconds: Long): String {
+    if (seconds < 3600 || seconds >= 86400) return ago(seconds)
+    val minutes = (seconds % 3600) / 60
+    return if (minutes == 0L) ago(seconds) else "${seconds / 3600} h $minutes min ago"
 }

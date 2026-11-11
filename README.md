@@ -33,8 +33,10 @@ Screenshots come from the automated test, which installs every build on an Andro
 
 The main screen lists every paired phone with its battery level, whether it is charging, and how long ago it last reported. When another phone in your group is charging you get two notifications:
 
-1. "Pixel 7 is 80% charged" when it reaches your alert level (80% by default, you can change it).
-2. "Pixel 7 is fully charged. You can use it now." when it reaches 100%.
+1. "Pixel 7 reached 80% · Charging" when it reaches your alert level (80% by default, you can change it).
+2. "Pixel 7 is full · Still on the charger" when it reaches 100%.
+
+Each alert carries the time the phone reported, not the time your phone heard about it. Android sometimes holds background checks back, for example overnight in Doze. When the news reaches you late, the alert says so: "Reported 35 min ago. The update arrived late, so it may be higher now."
 
 <p align="center">
   <img src="docs/screenshots/charging.png" width="400" alt="While a phone charges: the charging status and the 80% alert">
@@ -102,7 +104,7 @@ ChargeWatch is designed to cost almost nothing, and to stay out of sight, while 
 
 While a phone is charging (this one, or another one heading for an alert), ChargeWatch runs live: a foreground service with a streaming connection, so alerts arrive within a second. Android requires a notification for that, so you see "Poco X8 is charging · 62%" (or "This phone is charging") until the charge is done, then it goes away. The live connection is the expensive part (ntfy sends a keepalive about every 45 seconds, and each one wakes the radio), which is why it only runs during a charge, usually an hour or two, or while the app is open.
 
-The rest of the time nothing runs: no service, no notification, no connection. Android's JobScheduler runs a short check about every 15 minutes, only when there is a network, batched with other apps' work and held during Doze. A second job runs the moment this phone is plugged in. A check fetches what is new, posts any alert, sends this phone's level if it is due, and goes live if another phone has started charging. Alerts still fire for transitions a check finds up to 20 minutes late, and never twice.
+The rest of the time nothing runs: no service, no notification, no connection. Android's JobScheduler runs a short check about every 15 minutes, only when there is a network, batched with other apps' work and held during Doze. A second job runs the moment this phone is plugged in. A check fetches what is new, posts any alert, sends this phone's level if it is due, and goes live if another phone has started charging. A transition a check finds late still alerts, up to 2 hours late, and the alert says how late it is. If a phone reached 80% and then 100% while your phone slept, you get one alert, for the newest. If it was unplugged since, you get none. No alert fires twice.
 
 If you prefer the notification all the time, Settings > Status notification > Always keeps the service running, in low-power mode while nothing charges (checks every 15 minutes and when you turn the screen on).
 
@@ -128,7 +130,7 @@ A group is 80 random bits. The QR code holds `chargewatch:<group id>` and the nt
 {"v":1,"id":"5f2c9a1be07d4c13","name":"Pixel 7","level":82,"charging":true,"hb":1800}
 ```
 
-Every phone also reads the same topic: a streaming connection in live mode, and one-shot checks (`/json?poll=1&since=<last id>`) in low-power mode (see Battery use). The first read uses `since=12h`, so a phone learns the current state of every other phone from ntfy's 12-hour cache. It keeps a map of devices and fires an alert only on a transition (previous level below the mark, new level at or above it), only for messages under 20 minutes old, and never for its own messages. Old and duplicate messages are ignored, so replaying the backlog never repeats an alert.
+Every phone also reads the same topic: a streaming connection in live mode, and one-shot checks (`/json?poll=1&since=<last id>`) in low-power mode (see Battery use). The first read uses `since=12h`, so a phone learns the current state of every other phone from ntfy's 12-hour cache. It keeps a map of devices and fires an alert only on a transition (previous level below the mark, new level at or above it), and never for its own messages. The transition must be news: under 20 minutes old, or, when the read continues from the last message id this phone saw, up to 2 hours old. The first read after joining replays the cache without alerting. Old and duplicate messages are ignored, so replaying the backlog never repeats an alert.
 
 To stay well under the public relay's limits, a phone sends every 1% change while charging above 50%, every 5% otherwise, and a heartbeat when nothing changes (every 30 minutes on power, 60 on battery; `hb` says which). The heartbeat is what lets the list say "Last seen 3 h ago" for a phone that has gone quiet. A normal day is roughly 80 to 110 messages per phone.
 

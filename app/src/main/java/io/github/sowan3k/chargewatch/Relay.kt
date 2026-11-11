@@ -19,6 +19,12 @@ object Relay {
 
     class HttpError(val code: Int, val retryAfterSec: Long?) : IOException("HTTP $code")
 
+    /**
+     * Where a phone reads from when it has no last message id: ntfy's whole 12-hour cache.
+     * Any other value is a message id, and the read is "resumed" (see [Tracker.onMessage]).
+     */
+    const val BACKLOG = "12h"
+
     fun report(id: String, name: String, level: Int, charging: Boolean, heartbeatSec: Int): String =
         JSONObject()
             .put("v", 1)
@@ -120,12 +126,15 @@ object Relay {
 class Subscriber(
     private val server: String,
     private val topic: String,
-    /** Where to resume: the last message id seen, or "12h" for the whole cache. */
+    /** Where to resume: the last message id seen, or [Relay.BACKLOG] for the whole cache. */
     private val since: () -> String,
     /** False while the phone has no network. The loop then waits for [retryNow] instead of a timer. */
     private val online: () -> Boolean,
-    /** Every message event: its relay id, and the report if it is a valid one. */
-    private val onMessage: (String, Report?) -> Unit,
+    /**
+     * Every message event: its relay id, the report if it is a valid one, and whether this
+     * connection resumed from a message id (true) or replays the backlog (false).
+     */
+    private val onMessage: (String, Report?, Boolean) -> Unit,
     private val onState: (State) -> Unit,
 ) {
     sealed class State {
@@ -189,7 +198,9 @@ class Subscriber(
                 onState(State.Connecting)
                 // First connect: replay the cached backlog (ntfy keeps 12 h) to learn the
                 // current state of every phone. Reconnects only fetch what was missed.
-                val c = URL("$server/$topic/json?since=${since()}").openConnection() as HttpURLConnection
+                val from = since()
+                val resumed = from != Relay.BACKLOG
+                val c = URL("$server/$topic/json?since=$from").openConnection() as HttpURLConnection
                 connection = c
                 c.connectTimeout = 15_000
                 // ntfy sends a keepalive event about every 45 s, so silence means a dead link.
@@ -206,7 +217,7 @@ class Subscriber(
                         val line = r.readLine() ?: break
                         if (line.isBlank()) continue
                         val parsed = Relay.parse(line) ?: continue
-                        onMessage(parsed.first, parsed.second)
+                        onMessage(parsed.first, parsed.second, resumed)
                     }
                 }
             } catch (e: Relay.HttpError) {

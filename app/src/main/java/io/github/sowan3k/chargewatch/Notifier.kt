@@ -44,25 +44,18 @@ object Notifier {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    fun alert(context: Context, d: Device, alert: Alert) {
+    fun alert(context: Context, d: Device, alert: Alert, nowSec: Long = System.currentTimeMillis() / 1000) {
         createChannels(context)
-        val title: String
-        val text: String
-        when (alert) {
-            Alert.THRESHOLD -> {
-                title = "${d.name} is ${d.level}% charged"
-                text = "Still charging. Unplug it now if that is enough."
-            }
-            Alert.FULL -> {
-                title = "${d.name} is fully charged"
-                text = "You can use it now."
-            }
-        }
+        val text = AlertText.text(d, alert, nowSec)
         val n = Notification.Builder(context, CHANNEL_ALERTS)
             .setSmallIcon(R.drawable.ic_notify)
             .setColor(BRAND)
-            .setContentTitle(title)
+            .setContentTitle(AlertText.title(d, alert))
             .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            // The time shown is when the phone reported, not when this phone heard about it.
+            .setWhen(d.time * 1000)
+            .setShowWhen(true)
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_STATUS)
             .setContentIntent(openApp(context))

@@ -127,27 +127,33 @@ object Background {
 
         val tracker = Tracker(selfId).apply { restore(prefs.loadDevices()) }
         var lastId = prefs.lastMsgId(group)
+        // Continuing from the last message seen: everything fetched is news, even if late.
+        val resumed = lastId != null
         val lines = try {
-            Relay.poll(prefs.server, Pairing.topic(group), lastId ?: "12h")
+            Relay.poll(prefs.server, Pairing.topic(group), lastId ?: Relay.BACKLOG)
         } catch (e: Exception) {
             null
         }
         val now = System.currentTimeMillis() / 1000
+        val alerts = AlertQueue()
         lines?.forEach { line ->
             val (id, report) = Relay.parse(line) ?: return@forEach
             if (id.isNotEmpty()) lastId = id
             if (report == null) return@forEach
             if (report.left) {
                 tracker.onLeft(report.device.id, report.device.time)
+                alerts.drop(report.device.id)
             } else {
-                tracker.onMessage(report.device, now, prefs.threshold).alert?.let { Notifier.alert(context, report.device, it) }
+                alerts.offer(report.device, tracker.onMessage(report.device, now, prefs.threshold, resumed))
             }
         }
         val tidied = tracker.tidy(now, prefs.name)
         if (lines != null || tidied) {
+            // Saved before the alerts are shown, so a crash cannot show them twice.
             prefs.saveDevices(tracker.devices)
             if (lines != null) prefs.setLastMsgId(group, lastId)
         }
+        alerts.drain().forEach { (d, alert) -> Notifier.alert(context, d, alert, now) }
 
         if (level >= 0) publishIfDue(prefs, group, level, plugged)
 

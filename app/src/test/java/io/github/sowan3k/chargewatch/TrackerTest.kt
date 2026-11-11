@@ -62,6 +62,40 @@ class TrackerTest {
     }
 
     @Test
+    fun lateTransitionsAlertWhenTheReadResumed() {
+        // This phone slept through it: the next check continues from the last message it saw.
+        val t = Tracker(self)
+        t.onMessage(msg(79, time = now - 3000), now - 2990, 80)
+        assertEquals(Alert.THRESHOLD, t.onMessage(msg(80, time = now - 2900), now, 80, resumed = true).alert)
+        t.onMessage(msg(99, time = now - 1000), now, 80, resumed = true)
+        assertEquals(Alert.FULL, t.onMessage(msg(100, time = now - 900), now, 80, resumed = true).alert)
+    }
+
+    @Test
+    fun lateTransitionsStayQuietInTheBacklogReplay() {
+        // Joining replays 12 hours of messages. Old transitions in it are history, not news.
+        val t = Tracker(self)
+        t.onMessage(msg(79, time = now - 3000), now, 80, resumed = false)
+        assertNull(t.onMessage(msg(80, time = now - 2900), now, 80, resumed = false).alert)
+        // And they count as alerted, so a later resumed read cannot fire them either.
+        assertNull(t.onMessage(msg(81, time = now - 2800), now, 80, resumed = true).alert)
+    }
+
+    @Test
+    fun transitionsOlderThanTheLateWindowNeverAlert() {
+        val t = Tracker(self)
+        t.onMessage(msg(79, time = now - Tracker.LATE_SECONDS - 200), now, 80)
+        assertNull(t.onMessage(msg(80, time = now - Tracker.LATE_SECONDS - 100), now, 80, resumed = true).alert)
+    }
+
+    @Test
+    fun ownLateMessagesNeverAlert() {
+        val t = Tracker(self)
+        t.onMessage(msg(79, id = self, time = now - 3000), now, 80)
+        assertNull(t.onMessage(msg(80, id = self, time = now - 2900), now, 80, resumed = true).alert)
+    }
+
+    @Test
     fun lateButRecentMessagesStillAlert() {
         // A low-power check can fetch a transition a few minutes after it happened.
         val t = Tracker(self)

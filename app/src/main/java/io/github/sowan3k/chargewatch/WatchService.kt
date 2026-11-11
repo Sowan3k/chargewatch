@@ -86,6 +86,11 @@ class WatchService : Service() {
 
     private val statusRunnable = Runnable { postStatus() }
 
+    // Alerts wait here for a moment, so a reconnect that replays a burst of missed messages
+    // shows only what is still relevant (see AlertQueue). A live alert waits about a second.
+    private val alerts = AlertQueue()
+    private val alertRunnable = Runnable { showAlerts() }
+
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             onBattery(intent)
@@ -157,6 +162,8 @@ class WatchService : Service() {
             }
             getSystemService(AlarmManager::class.java)?.cancel(heartbeat)
         }
+        // Their flags are already saved, so show them now or never.
+        if (group != null && prefs.group == group) showAlerts()
         main.removeCallbacksAndMessages(null)
         saveRunnable.run()
         if (prefs.group != null) Background.schedule(this, charging)
@@ -170,6 +177,8 @@ class WatchService : Service() {
 
     private fun switchGroup(g: String, s: String) {
         stopStream()
+        main.removeCallbacks(alertRunnable)
+        alerts.drain() // alerts from the previous group no longer apply
         group = g
         server = s
         mode = Mode.OFF
@@ -238,13 +247,13 @@ class WatchService : Service() {
         subscriber = Subscriber(
             server = server,
             topic = Pairing.topic(g),
-            since = { lastMsgId ?: "12h" },
+            since = { lastMsgId ?: Relay.BACKLOG },
             online = ::isOnline,
-            onMessage = { id, report ->
+            onMessage = { id, report, resumed ->
                 main.post {
                     if (g != group) return@post
                     if (id.isNotEmpty()) lastMsgId = id
-                    report?.let { onReport(it, g) }
+                    report?.let { onReport(it, g, resumed) }
                 }
             },
             onState = { st -> main.post { onSubscriberState(st, g) } },
@@ -265,7 +274,8 @@ class WatchService : Service() {
         lastCheckAt = SystemClock.elapsedRealtime()
         maybePublish()
         val srv = server
-        val since = lastMsgId ?: "12h"
+        val since = lastMsgId ?: Relay.BACKLOG
+        val resumed = since != Relay.BACKLOG
         runOnNetwork {
             val lines = try {
                 Relay.poll(srv, Pairing.topic(g), since)
@@ -278,8 +288,9 @@ class WatchService : Service() {
                 lines?.forEach { line ->
                     val parsed = Relay.parse(line) ?: return@forEach
                     if (parsed.first.isNotEmpty()) lastMsgId = parsed.first
-                    parsed.second?.let { onReport(it, g) }
+                    parsed.second?.let { onReport(it, g, resumed) }
                 }
+                showAlerts()
                 if (lines != null) scheduleSave()
                 applyMode()
             }
@@ -326,10 +337,11 @@ class WatchService : Service() {
         }
     }
 
-    private fun onReport(r: Report, g: String) {
+    private fun onReport(r: Report, g: String, resumed: Boolean) {
         if (g != group) return
         val d = r.device
         if (r.left) {
+            alerts.drop(d.id)
             if (tracker.onLeft(d.id, d.time)) {
                 scheduleSave()
                 pushToHub()
@@ -339,12 +351,14 @@ class WatchService : Service() {
         }
         val wasCharging = anotherPhoneCharging()
         val nowSec = System.currentTimeMillis() / 1000
-        val update = tracker.onMessage(d, nowSec, prefs.threshold)
+        val update = tracker.onMessage(d, nowSec, prefs.threshold, resumed)
         if (!update.changed) return
         tracker.tidy(nowSec, prefs.name)
-        val alert = update.alert
-        if (alert != null) {
-            Notifier.alert(this, d, alert)
+        alerts.offer(d, update)
+        if (update.alert != null) {
+            // Shown once the burst settles. A check shows its alerts at the end instead.
+            main.removeCallbacks(alertRunnable)
+            main.postDelayed(alertRunnable, ALERT_SETTLE_MS)
             // Save at once so a crash or restart cannot fire the same alert again.
             main.removeCallbacks(saveRunnable)
             saveRunnable.run()
@@ -353,6 +367,14 @@ class WatchService : Service() {
         }
         pushToHub()
         if (anotherPhoneCharging() != wasCharging) applyMode()
+    }
+
+    /** Shows the alerts that survived the burst. */
+    private fun showAlerts() {
+        main.removeCallbacks(alertRunnable)
+        if (alerts.isEmpty()) return
+        val nowSec = System.currentTimeMillis() / 1000
+        alerts.drain().forEach { (d, alert) -> Notifier.alert(this, d, alert, nowSec) }
     }
 
     private fun onSubscriberState(st: Subscriber.State, g: String) {
@@ -586,6 +608,7 @@ class WatchService : Service() {
         const val HEARTBEAT_BATTERY_MS = 60 * 60 * 1000L
         private const val SCREEN_CHECK_GAP_MS = 2 * 60 * 1000L
         private const val RETRY_MS = 30 * 1000L
+        private const val ALERT_SETTLE_MS = 1_000L
         private const val FINE_FROM = 50
         private const val COARSE_STEP = 5
 

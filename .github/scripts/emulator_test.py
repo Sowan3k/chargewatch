@@ -11,7 +11,8 @@ by talking to ntfy.sh directly:
   3. check that the phone publishes its battery level, and again after plugging in
   4. post fake reports from a second phone and check both alerts appear
   5. restart the app and check that replaying the backlog does not alert again
-  6. close the app with nothing charging: the service stops; a background check delivers a missed alert
+  6. close the app with nothing charging: the service stops; a background check delivers a missed alert,
+     and one found 31 minutes late (clock moved forward) still alerts and says it is late
   7. leave the group and check the "left" message and that the service stopped
   8. join again, then uninstall, reinstall and join again: the phone must stay one device
 
@@ -187,6 +188,63 @@ def package_times():
     return (first.group(1) if first else None, last.group(1) if last else None)
 
 
+def shift_clock(seconds):
+    """
+    Moves the emulator's wall clock. Needs root, which the google_apis image allows. Returns
+    False when that is not possible here, so the caller can skip instead of fail.
+    """
+    out = run(["adb", "root"])
+    if "cannot" in out.lower():
+        return False
+    run(["adb", "wait-for-device"])
+    time.sleep(2)
+    sh("settings put global auto_time 0")
+    try:
+        target = int(sh("date +%s").strip()) + seconds
+    except ValueError:
+        return False
+    sh("date -u " + time.strftime("%m%d%H%M%Y.%S", time.gmtime(target)))
+    try:
+        return abs(int(sh("date +%s").strip()) - target) < 15
+    except ValueError:
+        return False
+
+
+def late_alert_test(topic, other):
+    """
+    A receiver that sleeps through a transition (Doze, no battery exemption) finds it late.
+    Up to 1.0.29 an alert found more than 20 minutes late was dropped. Now it shows, says
+    when the phone reported, and that it arrived late.
+    """
+    # Test Phone unplugs: nothing charges, the app is closed, so the service stops.
+    ntfy_publish(topic, {**other, "level": 70, "charging": False})
+    if not check(wait(lambda: not service_running(), 30), "with Test Phone unplugged, the service stops again"):
+        return
+    for level in (79, 80):
+        ntfy_publish(topic, {**other, "level": level, "charging": True})
+        time.sleep(2)
+    time.sleep(3)
+    check("arrived late" not in notifications(), "no late alert before the check")
+    late = 31 * 60
+    if not shift_clock(late):
+        print("SKIP  late alert test: cannot move the emulator's clock")
+        sh("settings put global auto_time 1")
+        return
+    try:
+        print(sh(f"cmd jobscheduler run -f {PKG} 1").strip())
+        check(wait(lambda: "arrived late" in notifications(), 40), "a transition found 31 minutes late still alerts")
+        n = notifications()
+        check("Test Phone reached 80%" in n and re.search(r"Reported 3\d min ago", n) is not None,
+              "and the alert says when Test Phone reported")
+        sh("cmd statusbar expand-notifications")
+        time.sleep(3)
+        screenshot("11-late-alert")
+        sh("cmd statusbar collapse")
+    finally:
+        shift_clock(-late)
+        sh("settings put global auto_time 1")
+
+
 def key_rotation_test(apk):
     """
     Releases up to 1.0.25 were signed with a debug key that is public. Newer releases are signed
@@ -303,11 +361,13 @@ def main():
     for level in (78, 79, 80):
         ntfy_publish(topic, {**other, "level": level, "charging": True})
         time.sleep(2)
-    check(wait(lambda: "Test Phone is 80% charged" in notifications(), 30), "alert shows: Test Phone is 80% charged")
+    check(wait(lambda: "Test Phone reached 80%" in notifications(), 30), "alert shows: Test Phone reached 80% · Charging")
+    check("Unplug it now if that is enough" in notifications() and "arrived late" not in notifications(),
+          "a timely alert says what to do and does not call itself late")
     for level in (99, 100):
         ntfy_publish(topic, {**other, "level": level, "charging": True})
         time.sleep(2)
-    check(wait(lambda: "Test Phone is fully charged" in notifications(), 30), "alert shows: Test Phone is fully charged")
+    check(wait(lambda: "Test Phone is full" in notifications(), 30), "alert shows: Test Phone is full · Still on the charger")
     sh("cmd statusbar expand-notifications")
     time.sleep(3)
     screenshot("6-alerts")
@@ -320,7 +380,8 @@ def main():
     sh(f"am start -W -n {PKG}/.MainActivity")
     check(wait(lambda: any(t.startswith("Connected to") for t in screen_text()), 40), "reconnects to the relay after restart")
     time.sleep(8)
-    check("Test Phone is" not in notifications(), "replaying the backlog does not repeat alerts")
+    check("Test Phone reached" not in notifications() and "Test Phone is full" not in notifications(),
+          "replaying the backlog does not repeat alerts")
     texts = screen_text()
     check("Test Phone" in texts and "100" in texts, "main screen lists Test Phone at 100%")
     check(any(t.startswith("Updated") for t in texts), "main screen shows when Test Phone last updated")
@@ -388,15 +449,16 @@ def main():
         ntfy_publish(topic, {**other, "level": level, "charging": plugged})
         time.sleep(2)
     time.sleep(4)
-    check("Test Phone is 80% charged" not in notifications(), "nothing stays connected while nothing charges")
+    check("Test Phone reached 80%" not in notifications(), "nothing stays connected while nothing charges")
     print(sh(f"cmd jobscheduler run -f {PKG} 1").strip())
-    check(wait(lambda: "Test Phone is 80% charged" in notifications(), 40), "the background check delivers the missed alert")
+    check(wait(lambda: "Test Phone reached 80%" in notifications(), 40), "the background check delivers the missed alert")
     check(wait(service_foreground, 30), "and goes live while Test Phone charges")
     check(wait(lambda: "Test Phone is charging" in notifications(), 20), "the notification names the charging phone")
     sh("cmd statusbar expand-notifications")
     time.sleep(3)
     screenshot("8-charging")
     sh("cmd statusbar collapse")
+    late_alert_test(topic, other)
     sh(f"am start -W -n {PKG}/.MainActivity")
     time.sleep(2)
 
