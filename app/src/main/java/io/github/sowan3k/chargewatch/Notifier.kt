@@ -15,7 +15,7 @@ object Notifier {
     const val NOTIF_STATUS = 1
     private const val NOTIF_UPDATE = 2
     private const val ALERT_BASE = 1000
-    const val BRAND = 0xFF9B2C2C.toInt()
+    const val BRAND = 0xFF16A34A.toInt()
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return

@@ -176,7 +176,9 @@ class WatchService : Service() {
         lastMsgId = prefs.lastMsgId(g)
         tracker.clear()
         tracker.restore(prefs.loadDevices())
+        tracker.tidy(System.currentTimeMillis() / 1000, prefs.name)
         pushToHub()
+        runOnNetwork { Background.sendGoodbyes(this) }
         startOnce()
         applyMode()
         if (stopping) return
@@ -336,8 +338,10 @@ class WatchService : Service() {
             return
         }
         val wasCharging = anotherPhoneCharging()
-        val update = tracker.onMessage(d, System.currentTimeMillis() / 1000, prefs.threshold)
+        val nowSec = System.currentTimeMillis() / 1000
+        val update = tracker.onMessage(d, nowSec, prefs.threshold)
         if (!update.changed) return
+        tracker.tidy(nowSec, prefs.name)
         val alert = update.alert
         if (alert != null) {
             Notifier.alert(this, d, alert)

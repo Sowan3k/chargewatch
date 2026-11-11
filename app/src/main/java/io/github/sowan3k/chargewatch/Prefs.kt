@@ -1,8 +1,10 @@
 package io.github.sowan3k.chargewatch
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -20,10 +22,67 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_SERVER, null) ?: Pairing.DEFAULT_SERVER
         set(v) = sp.edit().putString(KEY_SERVER, v).apply()
 
+    /**
+     * This phone's identity in a group. It comes from Android's per-app device id, so it stays
+     * the same when the app is reinstalled or its data is cleared, and the phone does not turn
+     * up twice in other phones' lists. (Earlier versions used a random id per install.)
+     */
     val deviceId: String
-        get() = sp.getString(KEY_DEVICE_ID, null) ?: Pairing.newDeviceId().also {
-            sp.edit().putString(KEY_DEVICE_ID, it).apply()
+        get() {
+            cachedId?.let { return it }
+            val stored = sp.getString(KEY_DEVICE_ID, null)
+            val id = stableId() ?: stored ?: Pairing.newDeviceId()
+            if (id != stored) {
+                sp.edit().putString(KEY_DEVICE_ID, id).apply()
+                if (stored != null) {
+                    // An id from an earlier version: tell the group to drop it, and drop it here.
+                    group?.let { addGoodbye(server, it, stored, name) }
+                    saveDevices(loadDevices().filter { it.id != stored })
+                }
+            }
+            cachedId = id
+            return id
         }
+
+    /** A short hash of Android's id for this app on this phone, or null if the phone has none. */
+    @SuppressLint("HardwareIds")
+    private fun stableId(): String? {
+        val raw = runCatching { Settings.Secure.getString(app.contentResolver, Settings.Secure.ANDROID_ID) }.getOrNull()
+        if (raw.isNullOrBlank() || raw == "9774d56d682e549c") return null // a known broken value
+        val hash = MessageDigest.getInstance("SHA-256").digest("chargewatch-device:$raw".toByteArray())
+        return hash.take(8).joinToString("") { "%02x".format(it) }
+    }
+
+    // ---- Goodbyes: "this phone left" messages that still have to reach the relay ----
+
+    fun goodbyes(): List<Goodbye> = try {
+        val arr = JSONArray(sp.getString(KEY_GOODBYES, null) ?: "[]")
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            Goodbye(o.getString("server"), o.getString("group"), o.getString("id"), o.optString("name", "Phone"), o.optLong("at"))
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    fun setGoodbyes(list: List<Goodbye>) {
+        val arr = JSONArray()
+        list.forEach {
+            arr.put(JSONObject().put("server", it.server).put("group", it.group).put("id", it.id).put("name", it.name).put("at", it.at))
+        }
+        sp.edit().putString(KEY_GOODBYES, arr.toString()).apply()
+    }
+
+    fun addGoodbye(server: String, group: String, id: String, name: String) {
+        setGoodbyes(goodbyes().filterNot { it.group == group && it.id == id } + Goodbye(server, group, id, name, System.currentTimeMillis()))
+    }
+
+    /** Joining a group again cancels a goodbye for it that has not been sent yet. */
+    fun dropGoodbye(group: String, id: String) {
+        val all = goodbyes()
+        val kept = all.filterNot { it.group == group && it.id == id }
+        if (kept.size != all.size) setGoodbyes(kept)
+    }
 
     var name: String
         get() = sp.getString(KEY_NAME, null)?.takeIf { it.isNotBlank() } ?: defaultName()
@@ -153,6 +212,8 @@ class Prefs(context: Context) {
         private const val KEY_GROUP = "group"
         private const val KEY_SERVER = "server"
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_GOODBYES = "goodbyes"
+        @Volatile private var cachedId: String? = null
         private const val KEY_NAME = "name"
         private const val KEY_THRESHOLD = "threshold"
         private const val KEY_DEVICES = "devices"
@@ -173,3 +234,6 @@ class Prefs(context: Context) {
 
     }
 }
+
+/** A "left the group" message waiting to be sent. */
+data class Goodbye(val server: String, val group: String, val id: String, val name: String, val at: Long)

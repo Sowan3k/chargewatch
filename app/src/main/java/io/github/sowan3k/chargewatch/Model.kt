@@ -62,6 +62,25 @@ class Tracker(private val selfId: String) {
         return true
     }
 
+    /**
+     * Drops entries that are clearly leftovers, and reports whether anything went:
+     * - a phone that has been silent for a week;
+     * - an entry that has been silent for hours while another phone (or this one) carries the
+     *   same name. That is the same phone under an old identity, from before a reinstall.
+     * A phone dropped by mistake comes back with its next report.
+     */
+    fun tidy(nowSec: Long, selfName: String?): Boolean {
+        val names = map.values.filter { it.id != selfId && nowSec - it.time < DUPLICATE_SECONDS }.groupBy { it.name }
+        val gone = map.values.filter { d ->
+            if (d.id == selfId) return@filter false
+            val silent = nowSec - d.time
+            silent > FORGET_SECONDS ||
+                (silent >= DUPLICATE_SECONDS && (d.name == selfName || names.containsKey(d.name)))
+        }
+        gone.forEach { map.remove(it.id) }
+        return gone.isNotEmpty()
+    }
+
     fun onMessage(msg: Device, nowSec: Long, threshold: Int): Update {
         val prev = map[msg.id]
         if (prev != null) {
@@ -106,6 +125,10 @@ class Tracker(private val selfId: String) {
         const val FRESH_SECONDS = 20 * 60L
         const val REARM_MARGIN = 5
         const val DEFAULT_HEARTBEAT = 30 * 60
+        /** A phone silent this long is dropped from the list. */
+        const val FORGET_SECONDS = 7 * 24 * 3600L
+        /** A silent entry with the same name as a live phone is dropped after this long. */
+        const val DUPLICATE_SECONDS = 6 * 3600L
 
         /** A phone is "gone" after missing two heartbeats plus a margin. */
         fun staleAfter(d: Device): Long = 2L * d.heartbeat + 5 * 60

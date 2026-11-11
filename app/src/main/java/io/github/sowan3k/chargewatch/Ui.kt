@@ -34,15 +34,14 @@ import android.widget.TextView
 /**
  * ChargeWatch's design system.
  *
- * Colours: a warm claret theme. Off-white paper with near-black ink, claret (#9B2C2C) for
- * the main actions and the alert mark, warm cream for secondary actions, amber for
- * "charging", golden brown for labels, and a darker red only for problems. The dark theme
- * is warm stone with a brighter red. Shadows are tinted deep red. The values come from the
- * project's theme tokens (background, card, primary, secondary, accent, muted, border,
- * destructive, chart).
+ * Colours: a lime and slate theme. A near-white page with slate ink, electric lime (#AFF33E)
+ * for the main actions, dark slate for secondary actions, green for "charging" and labels, amber
+ * for things that need attention and red only for problems. The dark theme is deep navy with the
+ * same lime. The values come from the project's theme tokens (background, card, primary,
+ * secondary, accent, muted, border, destructive, chart).
  *
- * Type: Barlow Semi Condensed for titles and figures, IBM Plex Sans for text, IBM Plex Mono
- * for codes. Fine states are quiet (a neutral pill with a small dot).
+ * Type: Inter for everything, set a little tight, and JetBrains Mono for codes. Corners are
+ * 16 dp. Fine states are quiet (a neutral pill with a small dot).
  *
  * Surfaces are glass: cards let a little of the moving background through. Everything you can
  * tap answers the finger: it sinks slightly, shows a ripple and gives a light haptic tick.
@@ -53,38 +52,40 @@ import android.widget.TextView
 class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
 
     // ---- Colour tokens (light / dark) ----
-    val bg = if (dark) 0xFF1C1917.toInt() else 0xFFFAF7F5.toInt()            // background
-    val fg = if (dark) 0xFFF5F5F4.toInt() else 0xFF1A1A1A.toInt()            // foreground
-    val muted = if (dark) 0xFFD6D3D1.toInt() else 0xFF57534E.toInt()         // muted-foreground
+    val bg = if (dark) 0xFF020617.toInt() else 0xFFFBFCF8.toInt()            // background
+    val fg = if (dark) 0xFFF8FAFC.toInt() else 0xFF0F172A.toInt()            // foreground
+    val muted = if (dark) 0xFF94A3B8.toInt() else 0xFF64748B.toInt()         // muted-foreground
     /** Cards: the card colour as glass, so the background shows through a little. */
-    val surface = if (dark) 0xC7292524.toInt() else 0xBDFFFFFF.toInt()       // card
-    val border = if (dark) 0xFF44403C.toInt() else 0xFFF5E8D2.toInt()        // border
+    val surface = if (dark) 0xD10F172A.toInt() else 0xD1FFFFFF.toInt()       // card
+    val border = if (dark) 0xFF1E293B.toInt() else 0xFFE2E8F0.toInt()        // border
     val hairline = border
-    val primary = if (dark) 0xFFB91C1C.toInt() else 0xFF9B2C2C.toInt()       // primary
-    val onPrimary = if (dark) 0xFFFAF7F5.toInt() else 0xFFFFFFFF.toInt()     // primary-foreground
-    val secondary = if (dark) 0xFF92400E.toInt() else 0xFFFDF2D6.toInt()     // secondary
-    val onSecondary = if (dark) 0xFFFEF3C7.toInt() else 0xFF805500.toInt()   // secondary-foreground
-    val accent = if (dark) 0xFFB45309.toInt() else 0xFFFEF3C7.toInt()        // accent
-    val onAccent = if (dark) 0xFFFEF3C7.toInt() else 0xFF7F1D1D.toInt()      // accent-foreground
-    val destructive = if (dark) 0xFFEF4444.toInt() else 0xFF991B1B.toInt()   // destructive
-    /** "Charging": amber (chart-4). */
-    val brand = if (dark) 0xFFFBBF24.toInt() else 0xFFB45309.toInt()
-    /** Labels and small accents: golden brown in light, amber in dark. */
-    val brass = if (dark) 0xFFF59E0B.toInt() else 0xFF805500.toInt()
-    val sheet = if (dark) 0xFF292524.toInt() else 0xFFFAF7F5.toInt()         // popover
-    val quiet = if (dark) 0xFF1F1C1A.toInt() else 0xFFF0EBE8.toInt()         // muted
+    val primary = if (dark) 0xFF96F104.toInt() else 0xFFAFF33E.toInt()       // primary
+    /** Text on lime. The dark theme's token (#53878F) is too faint on lime, so both use near-black. */
+    val onPrimary = if (dark) 0xFF020617.toInt() else 0xFF000000.toInt()     // primary-foreground
+    val secondary = if (dark) 0xFF344156.toInt() else 0xFF334155.toInt()     // secondary
+    val onSecondary = 0xFFF8FAFC.toInt()                                     // secondary-foreground
+    val accent = if (dark) 0xFF14532D.toInt() else 0xFFF0FDF4.toInt()        // accent
+    val onAccent = if (dark) 0xFFAFF33E.toInt() else 0xFF166534.toInt()      // accent-foreground
+    val destructive = if (dark) 0xFF991B1B.toInt() else 0xFFEF4444.toInt()   // destructive
+    /** "Charging": green (chart-3) on the light page, lime on the dark one. */
+    val brand = if (dark) 0xFFAFF33E.toInt() else 0xFF22C55E.toInt()
+    /** Labels and small accents: the accent's text colour. */
+    val brass = onAccent
+    val sheet = if (dark) 0xFF0F172A.toInt() else 0xFFFFFFFF.toInt()         // popover
+    val quiet = if (dark) 0xFF1E293B.toInt() else 0xFFF1F5F9.toInt()         // muted
     val dotOk = brand
-    val dotIdle = if (dark) 0x66F5F5F4 else 0x401A1A1A
-    val amberBg = if (dark) 0x38B45309 else accent
-    val amberBorder = if (dark) 0x80B45309.toInt() else 0xFFF5E1B0.toInt()
-    val amberText = if (dark) 0xFFFEF3C7.toInt() else onAccent
-    val redBg = if (dark) 0x33EF4444 else 0x1A991B1B
-    val redText = destructive
+    val dotIdle = if (dark) 0x6694A3B8 else 0x6664748B
+    /** Needs attention: amber (chart-5), so a warning never looks like good news. */
+    val amberBg = if (dark) 0x2EF59E0B else 0xFFFFFBEB.toInt()
+    val amberBorder = if (dark) 0x66F59E0B else 0xFFFDE68A.toInt()
+    val amberText = if (dark) 0xFFFCD34D.toInt() else 0xFF92400E.toInt()
+    val redBg = if (dark) 0x4D991B1B else 0x1AEF4444
+    val redText = if (dark) 0xFFFCA5A5.toInt() else 0xFFB91C1C.toInt()
     val track = quiet
-    /** The alert mark (tick, "Alert at 80%", settings icon): primary, lighter red (chart-1) in dark for contrast. */
-    val mark = if (dark) 0xFFF87171.toInt() else 0xFF9B2C2C.toInt()
-    /** Shadow tint, hsl(0 63% 18%). */
-    val shadow = 0xFF4B1111.toInt()
+    /** The alert mark (tick, "Alert at 80%", icons): slate on the light page, near-white on the dark one. */
+    val mark = if (dark) 0xFFF8FAFC.toInt() else 0xFF334155.toInt()
+    /** Shadow colour: black, as the theme asks. */
+    val shadow = 0xFF000000.toInt()
 
     // ---- Type ----
     val display: Typeface = Fonts.get(context, Fonts.DISPLAY)
@@ -105,27 +106,31 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
         typeface = face
     }
 
-    /** Page titles, 30 sp condensed bold. */
-    fun pageTitle(s: String) = text(s, 30f, fg, display).apply {
+    /** Page titles, 28 sp bold. */
+    fun pageTitle(s: String) = text(s, 28f, fg, display).apply {
         includeFontPadding = false
-        letterSpacing = -0.005f
+        letterSpacing = -0.025f
     }
 
     /** The opening headline. */
-    fun headline(s: String) = text(s, 40f, fg, display).apply {
+    fun headline(s: String) = text(s, 34f, fg, display).apply {
         includeFontPadding = false
-        letterSpacing = -0.01f
-        setLineSpacing(0f, 0.98f)
+        letterSpacing = -0.03f
+        setLineSpacing(0f, 1.04f)
     }
 
-    /** Section and sheet titles, 22 sp condensed semibold. */
-    fun section(s: String) = text(s, 22f, fg, displaySemi).apply { includeFontPadding = false }
+    /** Section and sheet titles, 21 sp semibold. */
+    fun section(s: String) = text(s, 21f, fg, displaySemi).apply {
+        includeFontPadding = false
+        letterSpacing = -0.02f
+    }
 
     /** Card titles, 18 sp semibold. */
-    fun cardTitle(s: String) = text(s, 18f, fg, sansSemi)
+    fun cardTitle(s: String) = text(s, 18f, fg, sansSemi).apply { letterSpacing = -0.015f }
 
     fun body(s: CharSequence, color: Int = muted, sp: Float = 15f) = text(s, sp, color, sans).apply {
         setLineSpacing(0f, 1.3f)
+        letterSpacing = -0.01f
     }
 
     fun caption(s: CharSequence, color: Int = muted) = text(s, 13f, color, sans)
@@ -135,10 +140,11 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
         letterSpacing = 0.08f
     }
 
-    /** Big numbers: condensed, tabular. */
-    fun figure(s: String, sp: Float, color: Int = fg) = text(s, sp, color, displaySemi).apply {
+    /** Big numbers: bold, tight, tabular. */
+    fun figure(s: String, sp: Float, color: Int = fg) = text(s, sp, color, display).apply {
         includeFontPadding = false
         fontFeatureSettings = "tnum"
+        letterSpacing = -0.04f
     }
 
     fun code(s: String, sp: Float = 15f, color: Int = fg) = text(s, sp, color, mono)
@@ -187,7 +193,7 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
         gravity = Gravity.CENTER_HORIZONTAL
         background = GradientDrawable().apply {
             cornerRadius = dpf(16f)
-            setStroke(dp(1), if (dark) 0x40F5F5F4 else 0x4D805500, dpf(6f), dpf(5f))
+            setStroke(dp(1), if (dark) 0x5994A3B8 else 0x8094A3B8.toInt(), dpf(6f), dpf(5f))
         }
     }
 
@@ -196,7 +202,7 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
         setPadding(dp(16), dp(14), dp(16), dp(14))
         background = rounded(amberBg, 16, amberBorder)
         addView(text(title, 15f, amberText, sansSemi))
-        addView(text(message, 14f, if (dark) 0xFFF5F5F4.toInt() else 0xFF1A1A1A.toInt(), sans).apply {
+        addView(text(message, 14f, fg, sans).apply {
             setLineSpacing(0f, 1.3f)
             setPadding(0, dp(4), 0, dp(10))
         })
@@ -204,7 +210,7 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
             text(action, 14f, amberText, sansSemi).apply {
                 setPadding(dp(14), dp(8), dp(14), dp(8))
                 setTextColor(onPrimary)
-                background = ripple(rounded(primary, 10), 10)
+                background = ripple(rounded(primary, 12), 12)
                 isClickable = true
                 isFocusable = true
                 Motion.pressable(this)
@@ -232,14 +238,14 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
 
     private fun ripple(content: Drawable?, radiusDp: Int): RippleDrawable {
         val mask = rounded(Color.WHITE, radiusDp)
-        val color = if (dark) 0x33FFFFFF else 0x229B2C2C
+        val color = if (dark) 0x33FFFFFF else 0x220F172A
         return RippleDrawable(ColorStateList.valueOf(color), content, mask)
     }
 
     /**
      * Buttons are plain TextViews with a shape and a ripple, so no platform button
-     * style (caps, insets, elevation) gets in the way. The main action is claret (primary)
-     * with a soft glow of its own colour under it, secondary actions are warm cream (secondary).
+     * style (caps, insets, elevation) gets in the way. The main action is lime (primary) with a
+     * soft shadow under it (a lime glow in the dark theme), secondary actions are slate.
      * Every button sinks under the finger, springs back and gives a light haptic tick.
      */
     fun button(label: String, style: Style = Style.SECONDARY, onClick: () -> Unit) = text(label, 15f, fg, sansMedium).apply {
@@ -251,24 +257,24 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
         when (style) {
             Style.PRIMARY -> {
                 setTextColor(onPrimary)
-                background = ripple(rounded(primary, 12), 12)
+                background = ripple(rounded(primary, 16), 16)
                 if (Build.VERSION.SDK_INT >= 28) {
-                    elevation = dpf(if (dark) 3f else 5f)
-                    outlineSpotShadowColor = primary
-                    outlineAmbientShadowColor = shadow
+                    elevation = dpf(4f)
+                    outlineSpotShadowColor = if (dark) primary else 0x59000000
+                    outlineAmbientShadowColor = if (dark) primary else 0x33000000
                 }
             }
             Style.SECONDARY -> {
                 setTextColor(onSecondary)
-                background = ripple(rounded(secondary, 12, if (dark) 0 else 0xFFF5E1B0.toInt()), 12)
+                background = ripple(rounded(secondary, 16), 16)
             }
             Style.GHOST -> {
                 setTextColor(muted)
-                background = ripple(null, 12)
+                background = ripple(null, 16)
             }
             Style.DANGER -> {
                 setTextColor(redText)
-                background = ripple(rounded(redBg, 12), 12)
+                background = ripple(rounded(redBg, 16), 16)
             }
         }
         Motion.pressable(this)
@@ -328,10 +334,10 @@ class Ui(val context: Context, val dark: Boolean, val motion: Boolean = true) {
         textSize = 16f
         typeface = if (monoFace) mono else sans
         setTextColor(fg)
-        setHintTextColor(if (dark) 0x80D6D3D1.toInt() else 0x8057534E.toInt())
+        setHintTextColor(if (dark) 0x8094A3B8.toInt() else 0x9964748B.toInt())
         minHeight = dp(48)
         setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = rounded(if (dark) 0xFF1C1917.toInt() else 0xFFFFFFFF.toInt(), 12, border, 1)
+        background = rounded(if (dark) 0xFF1E293B.toInt() else 0xFFFFFFFF.toInt(), 14, if (dark) 0xFF334155.toInt() else border, 1)
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
     }
 
@@ -352,25 +358,24 @@ object Fonts {
 
     private val cache = HashMap<String, Typeface>()
 
+    /** Inter is one variable file. Each role picks its weight from it. */
     @Synchronized
     fun get(context: Context, key: String): Typeface = cache.getOrPut(key) {
         val assets = context.applicationContext.assets
         val loaded = try {
-            when (key) {
-                DISPLAY -> Typeface.createFromAsset(assets, "fonts/barlow-700.ttf")
-                DISPLAY_SEMI -> Typeface.createFromAsset(assets, "fonts/barlow-600.ttf")
-                MONO -> Typeface.createFromAsset(assets, "fonts/plex-mono-500.ttf")
-                else -> {
-                    val weight = when (key) {
-                        SANS_MEDIUM -> 500
-                        SANS_SEMI -> 600
-                        else -> 400
-                    }
-                    Typeface.Builder(assets, "fonts/plex-sans-var.ttf")
-                        .setFontVariationSettings("'wght' $weight")
-                        .setWeight(weight)
-                        .build()
+            if (key == MONO) {
+                Typeface.createFromAsset(assets, "fonts/jetbrains-mono-500.ttf")
+            } else {
+                val weight = when (key) {
+                    DISPLAY -> 700
+                    DISPLAY_SEMI, SANS_SEMI -> 600
+                    SANS_MEDIUM -> 500
+                    else -> 400
                 }
+                Typeface.Builder(assets, "fonts/inter-var.ttf")
+                    .setFontVariationSettings("'wght' $weight")
+                    .setWeight(weight)
+                    .build()
             }
         } catch (e: Exception) {
             null

@@ -27,6 +27,8 @@ import kotlin.math.abs
 object Background {
     const val JOB_CHECK = 1
     const val JOB_CHARGING = 2
+    const val JOB_GOODBYE = 3
+    private const val GOODBYE_MAX_AGE_MS = 12 * 60 * 60 * 1000L
     private const val CHECK_PERIOD_MS = 15 * 60 * 1000L
     private const val CHECK_FLEX_MS = 5 * 60 * 1000L
     private const val UPDATE_CHECK_MS = 24 * 60 * 60 * 1000L
@@ -61,6 +63,41 @@ object Background {
         }
     }
 
+    /**
+     * Sends the waiting "left the group" messages. Returns true when none are left. Blocking.
+     * A goodbye older than the relay's 12-hour memory is dropped: nobody would act on it.
+     */
+    @Synchronized
+    fun sendGoodbyes(context: Context): Boolean {
+        val prefs = Prefs(context)
+        val waiting = prefs.goodbyes()
+        if (waiting.isEmpty()) return true
+        val now = System.currentTimeMillis()
+        val failed = waiting.filter { g ->
+            if (now - g.at > GOODBYE_MAX_AGE_MS) return@filter false
+            runCatching { Relay.publish(g.server, Pairing.topic(g.group), Relay.leaveReport(g.id, g.name)) }.isFailure
+        }
+        // Keep what failed, and anything queued while this was running.
+        val sent = waiting - failed.toSet()
+        prefs.setGoodbyes(prefs.goodbyes() - sent.toSet())
+        return prefs.goodbyes().isEmpty()
+    }
+
+    /** Sends the goodbyes now, off the main thread, and keeps trying whenever there is a network. */
+    fun sayGoodbyes(context: Context) {
+        val app = context.applicationContext
+        Thread {
+            if (!sendGoodbyes(app)) {
+                app.getSystemService(JobScheduler::class.java)?.schedule(
+                    JobInfo.Builder(JOB_GOODBYE, ComponentName(app, CheckJob::class.java))
+                        .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                        .setPersisted(true)
+                        .build()
+                )
+            }
+        }.start()
+    }
+
     /** Starts the foreground service in live mode. Returns false if Android does not allow it now. */
     fun startLive(context: Context): Boolean = try {
         context.startForegroundService(Intent(context, WatchService::class.java).setAction(WatchService.ACTION_LIVE))
@@ -76,6 +113,8 @@ object Background {
     /** One check without the service. Blocking: call it off the main thread. */
     fun check(context: Context) {
         val prefs = Prefs(context)
+        val selfId = prefs.deviceId // also retires an id from an earlier version
+        sendGoodbyes(context)
         val group = prefs.group ?: return
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val raw = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
@@ -86,7 +125,7 @@ object Background {
         // On power: the live service publishes every step. Nothing else to do here.
         if (plugged && startLive(context)) return
 
-        val tracker = Tracker(prefs.deviceId).apply { restore(prefs.loadDevices()) }
+        val tracker = Tracker(selfId).apply { restore(prefs.loadDevices()) }
         var lastId = prefs.lastMsgId(group)
         val lines = try {
             Relay.poll(prefs.server, Pairing.topic(group), lastId ?: "12h")
@@ -104,9 +143,10 @@ object Background {
                 tracker.onMessage(report.device, now, prefs.threshold).alert?.let { Notifier.alert(context, report.device, it) }
             }
         }
-        if (lines != null) {
+        val tidied = tracker.tidy(now, prefs.name)
+        if (lines != null || tidied) {
             prefs.saveDevices(tracker.devices)
-            prefs.setLastMsgId(group, lastId)
+            if (lines != null) prefs.setLastMsgId(group, lastId)
         }
 
         if (level >= 0) publishIfDue(prefs, group, level, plugged)
@@ -157,6 +197,13 @@ object Background {
 /** Runs [Background.check], or hands it to the service when the service is already running. */
 class CheckJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
+        if (params.jobId == Background.JOB_GOODBYE) {
+            Thread {
+                val done = runCatching { Background.sendGoodbyes(applicationContext) }.getOrDefault(false)
+                jobFinished(params, !done) // not done: Android runs it again later
+            }.start()
+            return true
+        }
         val hooks = Hub.service
         if (hooks != null) {
             hooks.checkNow()

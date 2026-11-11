@@ -10,19 +10,19 @@ so it plays in GitHub's README (an <img>), loops every 9 s, and has no external 
 import os
 
 THEMES = {
-    "light": dict(bg="#FAF7F5", card="#FFFFFF", border="#F5E8D2", fg="#1A1A1A", muted="#57534E",
-                  primary="#9B2C2C", on_primary="#FFFFFF", charge="#B45309", label="#805500",
-                  chip="#FDF2D6", chip_fg="#805500", screen="#FAF7F5", phone="#1A1A1A", track="#F0EBE8",
-                  glow="#FEF3C7"),
-    "dark": dict(bg="#1C1917", card="#292524", border="#44403C", fg="#F5F5F4", muted="#D6D3D1",
-                 primary="#B91C1C", on_primary="#FAF7F5", charge="#FBBF24", label="#F59E0B",
-                 chip="#292524", chip_fg="#FEF3C7", screen="#1C1917", phone="#0C0A09", track="#1F1C1A",
-                 glow="#3B1616"),
+    "light": dict(bg="#FBFCF8", card="#FFFFFF", border="#E2E8F0", fg="#0F172A", muted="#64748B",
+                  primary="#AFF33E", on_primary="#000000", charge="#22C55E", label="#166534",
+                  chip="#F0FDF4", chip_fg="#166534", screen="#FBFCF8", phone="#0F172A", track="#F1F5F9",
+                  glow="#D9F99D"),
+    "dark": dict(bg="#020617", card="#0F172A", border="#1E293B", fg="#F8FAFC", muted="#94A3B8",
+                 primary="#96F104", on_primary="#020617", charge="#AFF33E", label="#AFF33E",
+                 chip="#0F172A", chip_fg="#AFF33E", screen="#020617", phone="#000000", track="#1E293B",
+                 glow="#1A2E05"),
 }
 
-SERIF = "'Libre Baskerville', Georgia, 'Times New Roman', serif"
-SANS = "Poppins, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace"
+SERIF = "Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+SANS = "Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+MONO = "'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace"
 
 
 def svg(t):
@@ -76,7 +76,7 @@ def svg(t):
     <stop offset="1" stop-color="{c['glow']}" stop-opacity="0"/>
   </radialGradient>
   <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-    <feDropShadow dx="1" dy="2" stdDeviation="6" flood-color="#4B1111" flood-opacity="0.14"/>
+    <feDropShadow dx="1" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.10"/>
   </filter>
 </defs>
 <rect width="880" height="340" rx="20" fill="{c['bg']}"/>
@@ -84,7 +84,7 @@ def svg(t):
 
 <!-- What it is -->
 <text x="44" y="104" class="sans" font-size="12" font-weight="600" letter-spacing="2.2" fill="{c['label']}">ANDROID · FREE · OPEN SOURCE</text>
-<text x="42" y="160" class="serif" font-size="50" font-weight="700" fill="{c['fg']}">ChargeWatch</text>
+<text x="42" y="160" class="serif" font-size="50" font-weight="800" letter-spacing="-1.5" fill="{c['fg']}">ChargeWatch</text>
 <text x="44" y="200" class="sans" font-size="19" fill="{c['muted']}">Know when your other phone is charged.</text>
 <text x="44" y="226" class="sans" font-size="15" fill="{c['muted']}">Alerts at 80% and at 100%, on the phone in your hand.</text>
 <g class="sans" font-size="13" font-weight="500">

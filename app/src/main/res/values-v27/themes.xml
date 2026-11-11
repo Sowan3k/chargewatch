@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Warm off-white paper, near-black ink, claret primary. -->
+    <!-- Near-white page, slate ink, lime primary. -->
     <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:colorPrimary">#9B2C2C</item>
-        <item name="android:colorPrimaryDark">#FAF7F5</item>
-        <item name="android:colorAccent">#9B2C2C</item>
-        <item name="android:windowBackground">#FAF7F5</item>
-        <item name="android:statusBarColor">#FAF7F5</item>
+        <item name="android:colorPrimary">#334155</item>
+        <item name="android:colorPrimaryDark">#FBFCF8</item>
+        <item name="android:colorAccent">#16A34A</item>
+        <item name="android:windowBackground">#FBFCF8</item>
+        <item name="android:statusBarColor">#FBFCF8</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:textColorHighlight">#339B2C2C</item>
-        <item name="android:navigationBarColor">#FAF7F5</item>
+        <item name="android:textColorHighlight">#5522C55E</item>
+        <item name="android:navigationBarColor">#FBFCF8</item>
         <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

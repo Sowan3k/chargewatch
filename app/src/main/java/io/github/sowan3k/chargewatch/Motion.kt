@@ -198,16 +198,17 @@ class MonogramView(context: Context) : View(context) {
     fun setPalette(ui: Ui) {
         val d = ui.dark
         base = ui.bg
-        val glows = if (d) intArrayOf(0x3DB91C1C, 0x33B45309, 0x1FDC2626) else intArrayOf(0x179B2C2C, 0xCCFEECAA.toInt(), 0x17B45309)
-        val finger = if (d) 0x38FBBF24 else 0xBFFEDC96.toInt()
+        // Lime, a cooler second light and a soft green, the way the theme's charts are coloured.
+        val glows = if (d) intArrayOf(0x2196F104, 0x263B82F6, 0x1A22C55E) else intArrayOf(0x4DAFF33E, 0xB3DCFCE7.toInt(), 0x1464748B)
+        val finger = if (d) 0x33AFF33E else 0x8CAFF33E.toInt()
         (glows + finger).forEachIndexed { i, c ->
             unit[i] = RadialGradient(0f, 0f, 1f, c, c and 0x00FFFFFF, Shader.TileMode.CLAMP)
         }
-        // Tone on tone: claret on paper, champagne on stone. Lit marks turn amber or gold.
-        inkColor = if (d) 0xF2DDB0 else 0x9B2C2C
-        lightColor = if (d) 0xFBBF24 else 0xB45309
-        inkAlpha = if (d) 0.075f else 0.085f
-        lightAlpha = if (d) 0.62f else 0.50f
+        // Tone on tone: slate on the light page, pale slate on navy. Lit marks turn green or lime.
+        inkColor = if (d) 0x94A3B8 else 0x334155
+        lightColor = if (d) 0xAFF33E else 0x16A34A
+        inkAlpha = if (d) 0.10f else 0.075f
+        lightAlpha = if (d) 0.70f else 0.60f
         invalidate()
     }
 
@@ -425,7 +426,7 @@ class IntroView(
         val p = floatArrayOf(-1f, -8f, 3.75f, 8f, 9f, -2.5f, 14.25f, 8f, 19f, -8f)
         letterW.moveTo(ox + p[0] * u, cy + p[1] * u)
         for (i in 2 until p.size step 2) letterW.lineTo(ox + p[i] * u, cy + p[i + 1] * u)
-        val c = if (ui.dark) 0x38B45309 else 0xCCFEECAA.toInt()
+        val c = if (ui.dark) 0x2696F104 else 0x73AFF33E
         glow = RadialGradient(cx, cy, w * 0.8f, c, c and 0x00FFFFFF, Shader.TileMode.CLAMP)
     }
 

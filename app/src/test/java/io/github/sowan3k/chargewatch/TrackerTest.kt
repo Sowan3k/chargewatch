@@ -159,6 +159,49 @@ class TrackerTest {
     }
 
     @Test
+    fun aLeftoverWithTheSameNameIsDropped() {
+        // The same phone under an old identity (from before a reinstall), silent for hours.
+        val t = Tracker(self)
+        t.onMessage(Device("old00001", "Poco X8", 40, false, now - 7 * 3600, msgId = "a"), now, 80)
+        t.onMessage(Device("new00001", "Poco X8", 55, false, now - 60, msgId = "b"), now, 80)
+        t.onMessage(Device("other001", "Pixel", 70, false, now - 7 * 3600, msgId = "c"), now, 80)
+        assertTrue(t.tidy(now, "My phone"))
+        assertNull(t["old00001"])
+        assertNotNull(t["new00001"])
+        assertNotNull("a quiet phone with its own name stays", t["other001"])
+        assertFalse(t.tidy(now, "My phone"))
+    }
+
+    @Test
+    fun twoLivePhonesMayShareAName() {
+        val t = Tracker(self)
+        t.onMessage(Device("twin0001", "Redmi", 40, false, now - 600, msgId = "a"), now, 80)
+        t.onMessage(Device("twin0002", "Redmi", 55, false, now - 60, msgId = "b"), now, 80)
+        assertFalse(t.tidy(now, "My phone"))
+        assertEquals(2, t.devices.size)
+    }
+
+    @Test
+    fun anOldCopyOfThisPhoneIsDropped() {
+        val t = Tracker(self)
+        t.onMessage(Device("ghost001", "My phone", 40, false, now - 7 * 3600, msgId = "a"), now, 80)
+        t.onMessage(Device(self, "My phone", 90, true, now, msgId = "b"), now, 80)
+        assertTrue(t.tidy(now, "My phone"))
+        assertNull(t["ghost001"])
+        assertNotNull(t[self])
+    }
+
+    @Test
+    fun aPhoneSilentForAWeekIsForgotten() {
+        val t = Tracker(self)
+        t.onMessage(Device("gone0001", "Tablet", 40, false, now - 8 * 24 * 3600, msgId = "a"), now, 80)
+        t.onMessage(Device("here0001", "Pixel", 40, false, now - 3 * 24 * 3600, msgId = "b"), now, 80)
+        assertTrue(t.tidy(now, null))
+        assertNull(t["gone0001"])
+        assertNotNull(t["here0001"])
+    }
+
+    @Test
     fun leftRemovesDeviceOnlyIfNewer() {
         val t = Tracker(self)
         t.onMessage(msg(50, time = now), now, 80)

@@ -63,13 +63,30 @@ Releases only happen after the build passes its unit tests and the emulator test
 2. On the other phone, tap **Scan QR code** and point the camera at it. The scanner comes from Google Play services, so the app needs no camera permission. If the scanner is not available, tap **Enter code** and type the code shown under the QR.
 3. Both phones now appear on each other's screen. Add a third phone the same way with **Add a phone**.
 
-To unpair, tap **Leave group**. The other phones remove this one from their list. Long press a phone that no longer exists to remove it by hand.
+To unpair, tap **Leave group**. The other phones remove this one from their list. Tap a phone's card to see its details or remove it by hand.
+
+### One phone, one entry
+
+A phone keeps the same identity for as long as the app's signing key and the phone stay the same, so it shows up once in a group whatever you do:
+
+| You do this | What happens |
+| --- | --- |
+| Scan the code of the group you are already in | Nothing changes. The app says the phone is already in that group. |
+| Leave a group and join it again | The phone comes back as the same entry. |
+| Reinstall the app or clear its data, then join again | The same entry. Its identity comes from Android's per-app device id, not from the install. |
+| Leave a group while offline | The "left" message is queued and sent when the phone is online again (for up to 12 hours). |
+| Scan another group's code while in a group | The app asks first, then leaves the old group and joins the new one. |
+| Open a shared `chargewatch:<code>` link | The app opens and asks before joining. |
+| Rename a phone | The same entry, with the new name. |
+| Two phones with the same name | Two entries, as long as both keep reporting. |
+
+Leftovers clear themselves: an entry that has been silent for six hours while another phone carries the same name is dropped (that is the same phone under an old identity, from a version before identities were stable), and so is any phone silent for a week. A phone dropped by mistake returns with its next report.
 
 ## Look and feel
 
 The app opens with a short animation: the battery draws itself, "CW" is written inside, it fills with charge, and the picture opens onto the app. A tap skips it.
 
-The screen sits on a monogram canvas: ChargeWatch's own marks (the "CW" monogram, a bolt in a ring, a small battery) repeat on a diagonal lattice with dots between them, tone on tone over soft drifting glows. A band of light crosses it every few seconds, single marks glint, the marks near your finger light up, and the pattern slides a little as you scroll. Screens rise in, battery numbers count to their value, a charging bar carries a running light, and live status dots pulse. Everything you can tap sinks under the finger, shows a ripple and gives a light haptic tick. Cards are glass, so a little of the motion shows through.
+The screen sits on a monogram canvas: ChargeWatch's own marks (the "CW" monogram, a bolt in a ring, a small battery) repeat on a diagonal lattice with dots between them, tone on tone over soft drifting glows of lime. A band of light crosses it every few seconds, single marks glint, the marks near your finger light up, and the pattern slides a little as you scroll. Screens rise in, battery numbers count to their value, a charging bar carries a running light, and live status dots pulse. Everything you can tap sinks under the finger, shows a ripple and gives a light haptic tick. Cards are glass, so a little of the motion shows through.
 
 The sun or moon at the top switches between light and dark with a circular wipe. Settings > Appearance offers System, Light and Dark.
 
@@ -105,7 +122,7 @@ ChargeWatch runs a foreground service with a notification while a phone is charg
 
 ## How it works
 
-A group is 80 random bits. The QR code holds `chargewatch:<group id>` and the ntfy topic is `chargewatch-<group id>`. Each phone has a random device id. When its battery changes it posts a small JSON message to the topic:
+A group is 80 random bits. The QR code holds `chargewatch:<group id>` and the ntfy topic is `chargewatch-<group id>`. Each phone has a device id, a short hash of Android's per-app device id, so it survives a reinstall. When its battery changes it posts a small JSON message to the topic:
 
 ```json
 {"v":1,"id":"5f2c9a1be07d4c13","name":"Pixel 7","level":82,"charging":true,"hb":1800}
@@ -119,7 +136,7 @@ To stay well under the public relay's limits, a phone sends every 1% change whil
 
 ChargeWatch has no server, so it cannot count its users, and it does not try. The app shows two public numbers anyone can check on GitHub instead: total downloads from the releases and the repository's stars. A scheduled workflow (`.github/workflows/stats.yml`) copies them into the release's `version.json` every six hours. They stay hidden in the app until they pass 10.
 
-There is no ChargeWatch server and no account. The messages carry only a random id, the phone name, the battery level and the charging state. Anyone who has your group's QR code or code can read them, and so can the relay operator. If that matters to you, run your own relay.
+There is no ChargeWatch server and no account. The messages carry only the phone's id (a hash that means nothing outside ChargeWatch), the phone name, the battery level and the charging state. Anyone who has your group's QR code or code can read them, and so can the relay operator. If that matters to you, run your own relay.
 
 The QR scanner comes from Google Play services through Google's ML Kit library, which may send anonymous usage statistics about the scanner to Google. The app asks for no camera, location or contacts permission.
 
@@ -136,7 +153,7 @@ You need JDK 17 and the Android SDK (platform 34).
 # APK: app/build/outputs/apk/release/app-release.apk
 ```
 
-The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a warm claret theme (off-white paper, claret actions, amber for charging, with a warm stone dark mode), Barlow Semi Condensed and IBM Plex type (bundled, SIL Open Font License), glass cards, status pills and bottom sheets. `Motion.kt` holds the monogram background, the opening animation and the touch and transition effects. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
+The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a lime and slate theme (a near-white page, lime actions, slate secondary actions, green for charging, with a deep navy dark mode), Inter and JetBrains Mono type (bundled, SIL Open Font License), 16 dp corners, glass cards, status pills and bottom sheets. `Motion.kt` holds the monogram background, the opening animation and the touch and transition effects. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
 
 Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest). A second job installs that APK on an Android 14 emulator and drives it end to end (`.github/scripts/emulator_test.py`): it creates a group, checks that battery changes reach ntfy.sh, plays a second phone to trigger both alerts, restarts the app to make sure alerts do not repeat, and leaves the group.
 

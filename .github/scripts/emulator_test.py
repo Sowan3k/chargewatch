@@ -11,6 +11,7 @@ by talking to ntfy.sh directly:
   5. restart the app and check that replaying the backlog does not alert again
   6. close the app with nothing charging: the service stops; a background check delivers a missed alert
   7. leave the group and check the "left" message and that the service stopped
+  8. join again, then uninstall, reinstall and join again: the phone must stay one device
 
 Usage: python3 emulator_test.py ChargeWatch.apk
 """
@@ -337,6 +338,23 @@ def main():
     sh(f"am start -W -n {PKG}/.MainActivity")
     time.sleep(2)
 
+    # One phone, one identity. First: the code of the group it is already in changes nothing.
+    link = f"chargewatch:{code}"
+
+    def open_link():
+        sh(f"am start -a android.intent.action.VIEW -d {link} -n {PKG}/.MainActivity")
+
+    def phone_ids():
+        return {m.get("id") for m in ntfy_reports(topic)} - {other["id"]}
+
+    def own_reports():
+        return sum(1 for m in ntfy_reports(topic) if m.get("id") == self_id and not m.get("left"))
+
+    open_link()
+    time.sleep(3)
+    check("Join this group?" not in screen_text(), "the code of the group it is already in does not join it again")
+    check(phone_ids() == {self_id}, "and the phone is still one device")
+
     # 7. Leave the group
     sh("input swipe 500 1800 500 400 300")  # scroll to the buttons on small screens
     time.sleep(1)
@@ -349,6 +367,25 @@ def main():
     )
     check(wait(lambda: not service_running(), 20), "service stops after leaving")
     check(wait(lambda: "Pair your phones" in screen_text(), 20), "app returns to the pairing screen")
+
+    # 8. Join again, then reinstall and join again: other phones must still see one device.
+    count = own_reports()
+    open_link()
+    check(wait(lambda: "Join this group?" in screen_text(), 20), "a group link asks before joining")
+    tap("Join")
+    check(wait(lambda: own_reports() > count, 60, 3), "after leaving and joining again the phone reports")
+    check(phone_ids() == {self_id}, "leaving and joining again does not add a second device")
+
+    count = own_reports()
+    print(run(["adb", "uninstall", PKG]).strip())
+    check("Success" in run(["adb", "install", apk]), "the app installs again after an uninstall")
+    sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
+    sh(f"dumpsys deviceidle whitelist +{PKG}")
+    open_link()
+    check(wait(lambda: "Join this group?" in screen_text(), 40), "the fresh install opens the group link")
+    tap("Join")
+    check(wait(lambda: own_reports() > count, 60, 3), "after a reinstall the phone reports under its old identity")
+    check(phone_ids() == {self_id}, "a reinstall does not add a second device")
 
     # The launcher icon as Android draws it (adaptive icon with gradient strokes)
     sh("input keyevent KEYCODE_HOME")

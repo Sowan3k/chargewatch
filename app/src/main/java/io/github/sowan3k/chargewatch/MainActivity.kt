@@ -115,6 +115,7 @@ class MainActivity : Activity() {
             WatchService.start(this)
             askNotificationPermission()
         }
+        if (savedInstanceState == null) handleLink(intent)
     }
 
     override fun onResume() {
@@ -870,7 +871,20 @@ class MainActivity : Activity() {
         input.requestFocus()
     }
 
-    private fun onInvite(raw: String?) {
+    /** A "chargewatch:<code>" link was opened from another app. Joining from a link always asks first. */
+    private fun handleLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (intent.action != Intent.ACTION_VIEW || !"chargewatch".equals(data.scheme, ignoreCase = true)) return
+        intent.data = null // handle it once
+        onInvite(data.toString(), fromLink = true)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLink(intent)
+    }
+
+    private fun onInvite(raw: String?, fromLink: Boolean = false) {
         val invite = raw?.let { Pairing.parse(it) }
         if (invite == null) {
             toast("That is not a ChargeWatch group code.")
@@ -882,6 +896,7 @@ class MainActivity : Activity() {
             return
         }
         val notes = mutableListOf<String>()
+        if (fromLink) notes += "You opened a ChargeWatch group link. Phones in a group see each other's battery level."
         if (current != null) notes += "This phone will leave its current group."
         if (invite.server != Pairing.DEFAULT_SERVER) notes += "This group uses its own relay server: ${host(invite.server)}."
         if (notes.isEmpty()) {
@@ -901,6 +916,8 @@ class MainActivity : Activity() {
         prefs.leave()
         prefs.server = invite.server
         prefs.group = invite.groupId
+        // Back in a group this phone just left: the goodbye for it must not go out any more.
+        prefs.dropGoodbye(invite.groupId, prefs.deviceId)
         startWatching()
         toast("Joined. Phones in the group show up within a few seconds.")
     }
@@ -926,12 +943,14 @@ class MainActivity : Activity() {
         render()
     }
 
-    /** Tells the other phones to drop this one from their list. Best effort. */
+    /**
+     * Tells the other phones to drop this one from their list. The message is queued, so it
+     * still goes out later if the phone is offline right now.
+     */
     private fun sendLeave() {
         val group = prefs.group ?: return
-        val server = prefs.server
-        val body = Relay.leaveReport(prefs.deviceId, prefs.name)
-        Thread { runCatching { Relay.publish(server, Pairing.topic(group), body) } }.start()
+        prefs.addGoodbye(prefs.server, group, prefs.deviceId, prefs.name)
+        Background.sayGoodbyes(this)
     }
 
     private fun confirmForget(d: Device) {
@@ -1146,7 +1165,7 @@ class MainActivity : Activity() {
                 "Get a notification on one phone when your other phone is charged.\n\n" +
                     "Free and open source. Messages go through ntfy.sh, a free push relay. There is no account and no ChargeWatch server, " +
                     "so the app cannot count its users. GitHub counts downloads${statsText()}.\n\n" +
-                    "Fonts: IBM Plex and Barlow, SIL Open Font License."
+                    "Fonts: Inter and JetBrains Mono, SIL Open Font License."
             )
             .action("Source code", Ui.Style.PRIMARY) { openUrl("https://github.com/Sowan3k/chargewatch") }
             .action("Close", Ui.Style.GHOST)
