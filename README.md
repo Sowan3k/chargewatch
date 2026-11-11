@@ -146,10 +146,10 @@ The QR scanner comes from Google Play services through Google's ML Kit library, 
 
 | Certificate | SHA-256 |
 | --- | --- |
-| Release key (releases after 1.0.25) | `55ae2f76712ae8fb9525bf09ef77acff3ab7f14051e42638b60005ea51cbf5b5` |
+| Release key (1.0.28 and later) | `55ae2f76712ae8fb9525bf09ef77acff3ab7f14051e42638b60005ea51cbf5b5` |
 | Retired public key (up to 1.0.25) | `8131bb479c1b816cc8a5adb70b6908b837ef0e33955fef7ecb1fad3a4e27f44b` |
 
-**The retired key.** Up to 1.0.25, releases were signed with a debug key whose file and password were in this repo, and they are still in its history. Anyone could use it to sign a modified copy of ChargeWatch, and a phone running 1.0.25 or older would accept that copy as a normal update, with all the real app's data and permissions. That key is now retired. Each release after 1.0.25 carries a proof of rotation (APK Signature Scheme v3) signed by the retired key, which hands the app over to the private release key. On Android 9 and newer, the first update past 1.0.25 moves the app to the new key, keeps your data, and from then on Android refuses any copy signed only with the retired key. The proof grants the retired key no rollback right. The emulator test checks all of this on Android 14 for every build.
+**The retired key.** Up to 1.0.25, releases were signed with a debug key whose file and password were in this repo, and they are still in its history. Anyone could use it to sign a modified copy of ChargeWatch, and a phone running 1.0.25 or older would accept that copy as a normal update, with all the real app's data and permissions. That key is now retired. Since 1.0.28, the first release signed with the private key, each release carries a proof of rotation (APK Signature Scheme v3) signed by the retired key, which hands the app over to the private release key. On Android 9 and newer, the first update to 1.0.28 or later moves the app to the new key, keeps your data, and from then on Android refuses any copy signed only with the retired key. The proof grants the retired key no rollback right. The emulator test checks all of this on Android 14 for every build.
 
 **What remains.** Phones still on 1.0.25 or older stay exposed until they update, so update from inside the app. Android 8.0 and 8.1 do not understand key rotation, so they keep checking the retired key, and the risk stays there. Nothing can stop someone from building a fake ChargeWatch with any key and offering it as a fresh install elsewhere, so only install from this repository's releases.
 
