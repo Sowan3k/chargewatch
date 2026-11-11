@@ -6,3 +6,9 @@ local.properties
 .DS_Store
 captures/
 .kotlin/
+
+# Signing keys never belong in the repo. CI reads them from secrets.
+*.keystore
+*.jks
+*.p12
+*.pfx

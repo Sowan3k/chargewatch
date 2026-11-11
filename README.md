@@ -49,13 +49,13 @@ The status notification only shows while a phone is charging, and it names that 
 2. Open ChargeWatch, give the phone a name (or tap **Use system name**) and allow notifications.
 3. Tap **Allow** on the battery banner and pick **Allow** (this sets battery usage to Unrestricted). Without it, Android may pause the app in the background. On Xiaomi phones, also turn on Autostart from Settings > Background and battery.
 
-The APK is signed with a public debug key that lives in this repo, so each new build installs over the old one. Only install ChargeWatch from this repository's releases.
+Only install ChargeWatch from this repository's releases. See [Security](#security) for how releases are signed and how to check a download.
 
 ## Updates
 
-ChargeWatch updates itself. It checks this repository's `latest` release when you open it (and once a day in the background), shows an **Update available** card, downloads the new APK, checks its SHA-256 against the release, and hands it to Android's installer. You confirm the install, and your group and settings stay. Android only accepts the update if it carries the same signature as the installed app. The first time, Android asks you to let ChargeWatch install apps. Settings > App updates checks on demand.
+ChargeWatch updates itself. It checks this repository's `latest` release when you open it (and once a day in the background), shows an **Update available** card, downloads the new APK, checks its SHA-256 against the release, and hands it to Android's installer. You confirm the install, and your group and settings stay. Android only accepts the update if it is signed by the same key as the installed app (or by a key that key has handed over to, see [Security](#security)). The first time, Android asks you to let ChargeWatch install apps. Settings > App updates checks on demand.
 
-Releases only happen after the build passes its unit tests and the emulator test, so the in-app updater never offers an untested build.
+Releases only happen after the build passes its unit tests and the emulator test, and only when it is signed with the private release key, so the in-app updater never offers an untested or unsigned build.
 
 ## Pair your phones
 
@@ -140,6 +140,23 @@ There is no ChargeWatch server and no account. The messages carry only the phone
 
 The QR scanner comes from Google Play services through Google's ML Kit library, which may send anonymous usage statistics about the scanner to Google. The app asks for no camera, location or contacts permission.
 
+## Security
+
+**How releases are signed.** Android installs an update over an app only if both are signed by the same private key, or if the installed app's key has signed a handover (a "proof of rotation") to the new key. ChargeWatch releases are signed in CI with a private release key that lives only in this repository's Actions secrets. The signing script is `.github/scripts/sign.sh`, and it refuses to release anything not signed with these certificates:
+
+| Certificate | SHA-256 |
+| --- | --- |
+| Release key (releases after 1.0.25) | `55ae2f76712ae8fb9525bf09ef77acff3ab7f14051e42638b60005ea51cbf5b5` |
+| Retired public key (up to 1.0.25) | `8131bb479c1b816cc8a5adb70b6908b837ef0e33955fef7ecb1fad3a4e27f44b` |
+
+**The retired key.** Up to 1.0.25, releases were signed with a debug key whose file and password were in this repo, and they are still in its history. Anyone could use it to sign a modified copy of ChargeWatch, and a phone running 1.0.25 or older would accept that copy as a normal update, with all the real app's data and permissions. That key is now retired. Each release after 1.0.25 carries a proof of rotation (APK Signature Scheme v3) signed by the retired key, which hands the app over to the private release key. On Android 9 and newer, the first update past 1.0.25 moves the app to the new key, keeps your data, and from then on Android refuses any copy signed only with the retired key. The proof grants the retired key no rollback right. The emulator test checks all of this on Android 14 for every build.
+
+**What remains.** Phones still on 1.0.25 or older stay exposed until they update, so update from inside the app. Android 8.0 and 8.1 do not understand key rotation, so they keep checking the retired key, and the risk stays there. Nothing can stop someone from building a fake ChargeWatch with any key and offering it as a fresh install elsewhere, so only install from this repository's releases.
+
+**Check a download.** With the Android SDK, run `apksigner verify --print-certs --min-sdk-version 28 ChargeWatch.apk`. The certificate SHA-256 must match the release key above. The in-app updater also only downloads from this repository's releases and checks each APK's SHA-256 against the release before handing it to Android.
+
+**Reporting a problem.** Open an issue, or use GitHub's private vulnerability reporting on this repository for anything sensitive.
+
 ## Self-hosted relay
 
 ChargeWatch works with any [ntfy server](https://docs.ntfy.sh/install/). Set it under Settings, Relay server before you create the group. The server URL is then part of the QR code (`chargewatch:<group id>@https://ntfy.example.com`), so the other phones pick it up when they scan. The server must allow anonymous read and write on `chargewatch-*` topics and should keep a message cache of at least 12 hours.
@@ -150,12 +167,15 @@ You need JDK 17 and the Android SDK (platform 34).
 
 ```sh
 ./gradlew testReleaseUnitTest assembleRelease
-# APK: app/build/outputs/apk/release/app-release.apk
+# Unsigned APK: app/build/outputs/apk/release/app-release-unsigned.apk
+# Or a debug build signed with your own debug key: ./gradlew assembleDebug
 ```
+
+A copy you build yourself is signed with your key, so it cannot update the official app (or the other way round). Uninstall one before installing the other.
 
 The project uses Gradle 8.9, Android Gradle Plugin 8.5.2 and Kotlin 1.9.24. The UI is plain `android.app.Activity` built in code with no AndroidX UI libraries. A small design system in `Ui.kt` gives it a lime and slate theme (a near-white page, lime actions, slate secondary actions, green for charging, with a deep navy dark mode), Inter and JetBrains Mono type (bundled, SIL Open Font License), 16 dp corners, glass cards, status pills and bottom sheets. `Motion.kt` holds the monogram background, the opening animation and the touch and transition effects. `tools/icon_gen.py` draws the icon set (launcher, monochrome, status bar, settings) and `tools/hero_gen.py` the animated banner at the top of this page. The only dependencies are ZXing core (to draw the QR code) and the Google code scanner (to read it). Release builds use R8 and resource shrinking.
 
-Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest). A second job installs that APK on an Android 14 emulator and drives it end to end (`.github/scripts/emulator_test.py`): it creates a group, checks that battery changes reach ntfy.sh, plays a second phone to trigger both alerts, restarts the app to make sure alerts do not repeat, and leaves the group.
+Every push to `main` runs the GitHub Actions workflow in `.github/workflows/build.yml`. It runs the unit tests, builds the release APK, signs it with the release key and the proof of rotation (`.github/scripts/sign.sh`, keys from the `CHARGEWATCH_KEYSTORE` and `CHARGEWATCH_KEYSTORE_PASSWORD` secrets; forks and pull requests use throwaway keys and never release), fails if the APK is over 5 MB, and uploads `ChargeWatch.apk` to the [`latest` release](https://github.com/Sowan3k/chargewatch/releases/tag/latest). A second job installs that APK on an Android 14 emulator and drives it end to end (`.github/scripts/emulator_test.py`): it creates a group, checks that battery changes reach ntfy.sh, plays a second phone to trigger both alerts, restarts the app to make sure alerts do not repeat, and leaves the group. It also installs a copy signed with the retired key, updates it with the release, and checks that the retired key can no longer replace it.
 
 ## License
 

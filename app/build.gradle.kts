@@ -21,22 +21,6 @@ android {
         resourceConfigurations += listOf("en")
     }
 
-    signingConfigs {
-        // A fixed debug key lives in the repo so every CI build has the same
-        // signature and updates install over the old version.
-        getByName("debug") {
-            storeFile = rootProject.file("keystore/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-            // Sign with every scheme. v1 (JAR) costs a few KB and keeps older or
-            // vendor installers and security scanners happy.
-            enableV1Signing = true
-            enableV2Signing = true
-            enableV3Signing = true
-        }
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -45,7 +29,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // Left unsigned here. CI signs releases with the private release key and a proof of
+            // key rotation (see .github/scripts/sign.sh). Debug builds use your own debug key.
+            signingConfig = null
         }
     }
 

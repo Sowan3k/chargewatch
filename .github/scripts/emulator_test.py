@@ -4,6 +4,8 @@
 It installs the release APK, drives the UI with adb, and plays the "other phone"
 by talking to ntfy.sh directly:
 
+  0. signing key rotation: an old-key copy accepts the release as an update, then can no
+     longer replace it
   1. install the APK, open the app and name the phone in onboarding
   2. create a group and read the group code from the QR dialog
   3. check that the phone publishes its battery level, and again after plugging in
@@ -16,6 +18,7 @@ by talking to ntfy.sh directly:
 Usage: python3 emulator_test.py ChargeWatch.apk
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -177,8 +180,51 @@ def service_foreground():
     return "isForeground=true" in sh(f"dumpsys activity services {PKG}")
 
 
+def package_times():
+    out = sh(f"dumpsys package {PKG}")
+    first = re.search(r"firstInstallTime=(\S+ \S+)", out)
+    last = re.search(r"lastUpdateTime=(\S+ \S+)", out)
+    return (first.group(1) if first else None, last.group(1) if last else None)
+
+
+def key_rotation_test(apk):
+    """
+    Releases up to 1.0.25 were signed with a debug key that is public. Newer releases are signed
+    with a private key and carry a proof of rotation. Check what that means on a real system:
+    an installed copy signed with the old key accepts the release as an update and keeps its data,
+    and after that, a copy signed only with the old key can no longer replace it.
+    """
+    oldkey = "ChargeWatch-oldkey.apk"
+    if not os.path.exists(oldkey):
+        print("SKIP  key rotation test (no old-key copy)")
+        return
+    run(["adb", "uninstall", PKG])
+    check("Success" in run(["adb", "install", oldkey]), "a copy signed with the old public key installs (as older releases did)")
+    sh(f"monkey -p {PKG} -c android.intent.category.LAUNCHER 1")  # create its data
+    time.sleep(4)
+    first, _ = package_times()
+    time.sleep(1)
+
+    out = run(["adb", "install", "-r", apk])
+    print(out.strip())
+    check("Success" in out, "the release (private key, proof of rotation) installs over it as an update")
+    after, updated = package_times()
+    check(first is not None and after == first and updated != first, "and it is an update that keeps the app's data")
+    print(next((l.strip() for l in sh(f"dumpsys package {PKG}").splitlines() if "signatures" in l and "past" in l), ""))
+
+    out = run(["adb", "install", "-r", oldkey])
+    print(out.strip())
+    check("Success" not in out and ("UPDATE_INCOMPATIBLE" in out or "signatures do not match" in out.lower()),
+          "a copy signed with the old public key can no longer replace it")
+    check(package_times()[0] == first, "and the release stays installed")
+    run(["adb", "uninstall", PKG])
+
+
 def main():
     apk = sys.argv[1]
+
+    # 0. Signing key rotation
+    key_rotation_test(apk)
 
     # 1. Install and open
     out = run(["adb", "install", "-r", apk])
